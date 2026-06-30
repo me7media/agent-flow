@@ -35,6 +35,34 @@ const roleCatalog = [
     keywords: ['qa', 'tester', 'quality']
   },
   {
+    key: 'iot_source',
+    label: 'IoT Signal Agent',
+    match: ['iot', 'camera', 'microphone', 'sensor', 'signal', 'mqtt', 'rtsp', 'wifi', 'bluetooth', 'камер', 'мікроф', 'датчик', 'сигнал'],
+    skills: ['iot_source', 'sensor_reading', 'audio_signal'],
+    keywords: ['iot signal', 'iot source', 'sensor', 'camera']
+  },
+  {
+    key: 'vision',
+    label: 'Vision Gesture Agent',
+    match: ['gesture', 'vision', 'image', 'video', 'recognition', 'жест', 'розпізн', 'відео', 'зображ'],
+    skills: ['iot_source', 'computer_vision', 'gesture_recognition'],
+    keywords: ['vision', 'gesture', 'camera']
+  },
+  {
+    key: 'iot_control',
+    label: 'IoT Device Manager',
+    match: ['gate', 'device', 'relay', 'kettle', 'open', 'close', 'control', 'ворот', 'пристр', 'чайник', 'відкр', 'закр'],
+    skills: ['device_control', 'iot_safety', 'api_connector'],
+    keywords: ['iot device', 'device manager', 'control', 'gate']
+  },
+  {
+    key: 'iot_safety',
+    label: 'IoT Safety Supervisor',
+    match: ['safety', 'approval', 'permission', 'physical', 'безпек', 'дозвіл', 'підтвердж'],
+    skills: ['iot_safety', 'security', 'reviewer'],
+    keywords: ['iot safety', 'safety supervisor', 'security']
+  },
+  {
     key: 'security',
     label: 'Security Reviewer',
     match: ['security', 'auth', 'token', 'secret', 'permission', 'безпек'],
@@ -57,17 +85,23 @@ const roleCatalog = [
   }
 ];
 
-const defaultOrder = ['requirements', 'scanner', 'architect', 'developer', 'qa', 'security', 'docs', 'final'];
+const defaultOrder = ['requirements', 'scanner', 'iot_source', 'vision', 'architect', 'developer', 'qa', 'iot_safety', 'iot_control', 'security', 'docs', 'final'];
 
 export function buildWorkflowFromPrompt({ prompt, agents = [], existingFlow = [], idFactory = defaultIdFactory } = {}) {
   const text = String(prompt || '').trim();
   const lower = text.toLowerCase();
-  const requested = new Set(['requirements', 'scanner', 'developer', 'qa', 'final']);
+  const isIot = ['iot', 'camera', 'microphone', 'sensor', 'gesture', 'gate', 'mqtt', 'rtsp', 'камер', 'датчик', 'жест', 'ворот'].some(token => lower.includes(token));
+  const requested = isIot
+    ? new Set(['requirements', 'iot_source', 'iot_safety', 'iot_control', 'final'])
+    : new Set(['requirements', 'scanner', 'developer', 'qa', 'final']);
   for (const role of roleCatalog) {
     if (role.match.some(token => lower.includes(token))) requested.add(role.key);
   }
   if (lower.includes('full') || lower.includes('production') || lower.includes('повн')) {
     for (const key of ['architect', 'security', 'docs']) requested.add(key);
+  }
+  if (isIot && ['gesture', 'vision', 'camera', 'жест', 'камер', 'розпізн'].some(token => lower.includes(token))) {
+    requested.add('vision');
   }
 
   const createdAgents = [];
@@ -127,7 +161,11 @@ function createAgentForRole(role, idFactory) {
     model: 'gpt-4.1-mini',
     temperature: role.key === 'developer' ? 0.15 : 0.2,
     skills: role.skills,
-    mcps: role.key === 'developer' || role.key === 'scanner' ? ['filesystem-mcp', 'git-mcp'] : [],
+    mcps: role.key === 'developer' || role.key === 'scanner'
+      ? ['filesystem-mcp', 'git-mcp']
+      : role.key.startsWith('iot') || role.key === 'vision'
+        ? ['iot-gateway-mcp']
+        : [],
     systemPrompt: `You are ${role.label}. Produce concrete deliverables for your workflow step.`
   };
 }
@@ -139,6 +177,10 @@ function noteForRole(key, prompt) {
     architect: 'Design the minimal implementation structure, data flow and migration plan.',
     developer: 'Implement the requested change with complete file blocks and validation commands.',
     qa: 'Verify behavior, edge cases, test commands and defects.',
+    iot_source: 'Normalize incoming IoT source metadata, transport, payload type and confidence.',
+    vision: 'Recognize visual gestures/events and return intent, confidence and uncertainty.',
+    iot_safety: 'Check approval, false-positive risk and safe fallback before physical actions.',
+    iot_control: 'Prepare explicit dry-run device commands only for configured safe actions.',
     security: 'Review permissions, secrets, file writes and risky operations.',
     docs: 'Update usage notes, README text and operator instructions.',
     final: 'Assemble final result, changed files, risks and next actions.'

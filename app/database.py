@@ -14,6 +14,7 @@ COLLECTIONS = {
     "mcps": "mcps",
     "flows": "flows",
     "savedSequences": "saved_sequences",
+    "settings": "settings",
 }
 
 
@@ -118,4 +119,3 @@ def write_state(db: dict[str, Any]) -> None:
                 """,
                 (run_id, run.get("flowId"), run.get("createdAt"), _dump(run)),
             )
-

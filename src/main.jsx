@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { IoTPipelinesPage } from './iotPipelinesPage.jsx';
+import { SettingsPage } from './settingsPage.jsx';
 import { appendWorkflowSteps, buildWorkflowFromPrompt } from './workflowAssistant.js';
 import './styles.css';
 
@@ -7,6 +9,16 @@ const API = 'http://localhost:8787/api';
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+const mergeById = (current = [], incoming = []) => {
+  const seen = new Set();
+  const merged = [];
+  for (const item of [...current, ...incoming]) {
+    if (!item?.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged;
+};
 const normalizeFlow = (flow) => Array.isArray(flow) ? flow.map(step => ({ id: step.id || uuid(), note: '', cron: '', loops: 1, dependsOnPrevious: true, ...step })) : [];
 const normalizeLoopGroups = (groups, flowLength) => Array.isArray(groups) ? groups.map(g => ({ ...g, start: Number(g.start || 0), end: Number(g.end || 0), loops: Number(g.loops || 2) })).filter(g => g.start >= 0 && g.end > g.start && g.end < flowLength) : [];
 const providerOptions = [
@@ -24,6 +36,7 @@ function App() {
   const [skills, setSkills] = useState([]);
   const [mcps, setMcps] = useState([]);
   const [providers, setProviders] = useState(providerOptions);
+  const [settings, setSettings] = useState({ id: 'runtime-settings', llmProviders: providerOptions, iotSources: [], iotActions: [] });
   const [agents, setAgents] = useState(() => load('agents', []));
   const [flow, setFlow] = useState(() => load('activeFlow', []));
   const [flowMeta, setFlowMeta] = useState(() => load('activeFlowMeta', {}));
@@ -35,14 +48,21 @@ function App() {
   useEffect(() => {
     Promise.all([
       fetch(`${API}/health`).then(r => r.json()).catch(() => ({ provider: 'offline' })),
-      fetch(`${API}/registry`).then(r => r.json()).catch(() => null)
-    ]).then(([h, registry]) => {
+      fetch(`${API}/registry`).then(r => r.json()).catch(() => null),
+      fetch(`${API}/settings`).then(r => r.json()).catch(() => null)
+    ]).then(([h, registry, runtimeSettings]) => {
       setHealth(h);
+      const nextSettings = runtimeSettings || registry?.settings || h.settings;
+      if (nextSettings) setSettings(nextSettings);
       if (registry) {
         setSkills(registry.skills || []);
         setMcps(registry.mcps || []);
         setProviders(registry.providers?.length ? registry.providers : h.providers || providerOptions);
-        if (!agents.length) { setAgents(registry.agents || []); save('agents', registry.agents || []); }
+        setAgents(current => {
+          const merged = mergeById(current, registry.agents || []);
+          save('agents', merged);
+          return merged;
+        });
       }
     });
   }, []);
@@ -81,19 +101,23 @@ function App() {
       <div className="brand"><div className="logo">⚙️</div><div><b>Agent Flow</b><span>full-stack lite</span></div></div>
       <div className="status">API: <b>{health.provider}</b></div>
       <button className={page === 'flow' ? 'active' : ''} onClick={() => setPage('flow')}>Workflow builder</button>
+      <button className={page === 'iot' ? 'active' : ''} onClick={() => setPage('iot')}>IoT Pipelines</button>
       <button className={page === 'run' ? 'active' : ''} onClick={() => setPage('run')}>Live run show{runningCount ? ` (${runningCount})` : ''}</button>
       <button className={page === 'saved' ? 'active' : ''} onClick={() => setPage('saved')}>Pipelines</button>
       <button className={page === 'builder' ? 'active' : ''} onClick={() => setPage('builder')}>Agent builder</button>
       <button className={page === 'workspace' ? 'active' : ''} onClick={() => setPage('workspace')}>Workspace / Git</button>
+      <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}>Settings</button>
       <button className={page === 'skills' ? 'active' : ''} onClick={() => setPage('skills')}>Skills / MCP</button>
       <button className="ghost" onClick={() => setDark(!dark)}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
     </aside>
     <main>
-      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} settings={settings} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {page === 'iot' && <IoTPipelinesPage agents={agents} settings={settings} setSettings={setSettings} setAgents={persistAgents} setFlow={persistFlow} setMeta={persistMeta} setPage={setPage} />}
       {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
       {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} />}
       {page === 'workspace' && <WorkspacePage />}
+      {page === 'settings' && <SettingsPage settings={settings} setSettings={setSettings} setProviders={setProviders} />}
       {page === 'skills' && <SkillsPage skills={skills} mcps={mcps} />}
     </main>
   </div>;
@@ -101,7 +125,7 @@ function App() {
 
 function Header({ title, subtitle }) { return <header className="header"><h1>{title}</h1><p>{subtitle}</p></header>; }
 
-function FlowPage({ agents, setAgents, skills, mcps, providers, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
+function FlowPage({ agents, setAgents, skills, mcps, providers, settings, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
   const [dragAgentId, setDragAgentId] = useState(null);
   const [dragStepIndex, setDragStepIndex] = useState(null);
   const [viewMode, setViewMode] = useState('chain');
@@ -234,7 +258,7 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, flow, setFlow, m
       <div className="panel drop-panel">
         <h3>{viewMode === 'diagram' ? 'Workflow diagram' : 'Highlighted sequence area'}</h3>
         <div className="inline-loop-builder"><label>From <input type="number" min="1" max={Math.max(flow.length, 1)} value={groupStart} onChange={e => setGroupStart(e.target.value)} /></label><label>To <input type="number" min="1" max={Math.max(flow.length, 1)} value={groupEnd} onChange={e => setGroupEnd(e.target.value)} /></label><label>Repeat <input type="number" min="2" max="20" value={groupLoops} onChange={e => setGroupLoops(e.target.value)} /></label><button disabled={flow.length < 2} onClick={addLoopGroup}>🔁 Group selected range</button></div>
-        {viewMode === 'diagram' ? <WorkflowDiagram flow={flow} agents={agents} loopGroups={loopGroups} selectedStepId={selectedStepId} setSelectedStepId={setSelectedStepId} onDropAgent={(agentId) => addAgentToFlow(agentId)} /> : <div className={`dropzone ${flow.length ? '' : 'empty'}`} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragAgentId) addAgentToFlow(dragAgentId); setDragAgentId(null); }}>
+        {viewMode === 'diagram' ? <WorkflowDiagram flow={flow} agents={agents} loopGroups={loopGroups} selectedStepId={selectedStepId} setSelectedStepId={setSelectedStepId} onDropAgent={(agentId) => addAgentToFlow(agentId)} onRemoveStep={removeStep} /> : <div className={`dropzone ${flow.length ? '' : 'empty'}`} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragAgentId) addAgentToFlow(dragAgentId); setDragAgentId(null); }}>
           {!flow.length && <div className="empty-hint">Drop agents here. The order is saved and every next agent receives the previous result.</div>}
           {flow.map((step, index) => { const agent = agents.find(a => a.id === step.agentId); return <React.Fragment key={step.id}>
             {groupStartsAt(index).map(g => <div key={`${g.id}-start`} className="group-band start"><b>🔁 {g.name}</b><span>steps #{g.start + 1}–#{g.end + 1} · {g.loops} cycles</span><button onClick={() => removeLoopGroup(g.id)}>remove</button></div>)}
@@ -249,12 +273,12 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, flow, setFlow, m
         </div>}
       </div>
     </div>
-    <StepSettingsDrawer step={selectedStep} agent={selectedAgent} agents={agents} setAgents={setAgents} skills={skills} mcps={mcps} providers={providers} updateStep={updateStep} close={() => setSelectedStepId(null)} />
+    <StepSettingsDrawer step={selectedStep} agent={selectedAgent} agents={agents} setAgents={setAgents} skills={skills} mcps={mcps} providers={providers} settings={settings} updateStep={updateStep} close={() => setSelectedStepId(null)} />
     {error && <div className="error">{error}</div>}
   </section>;
 }
 
-function WorkflowDiagram({ flow, agents, loopGroups, selectedStepId, setSelectedStepId, onDropAgent }) {
+function WorkflowDiagram({ flow, agents, loopGroups, selectedStepId, setSelectedStepId, onDropAgent, onRemoveStep }) {
   const nodeWidth = 220;
   const nodeHeight = 112;
   const gapX = 92;
@@ -281,24 +305,31 @@ function WorkflowDiagram({ flow, agents, loopGroups, selectedStepId, setSelected
       {flow.map((step, index) => {
         const agent = agents.find(item => item.id === step.agentId);
         const position = nodeFor(index);
-        return <button key={step.id} className={`diagram-node ${selectedStepId === step.id ? 'selected-node' : ''}`} style={{ left: position.x, top: position.y, width: nodeWidth }} onClick={() => setSelectedStepId(step.id)}>
+        return <div key={step.id} role="button" tabIndex={0} className={`diagram-node ${selectedStepId === step.id ? 'selected-node' : ''}`} style={{ left: position.x, top: position.y, width: nodeWidth }} onClick={() => setSelectedStepId(step.id)} onKeyDown={event => { if (event.key === 'Enter') setSelectedStepId(step.id); }}>
+          <button className="diagram-delete" aria-label={`Remove ${agent?.name || step.agentId}`} onClick={event => { event.stopPropagation(); onRemoveStep(step.id); }}>✕</button>
           <span className="node-index">#{index + 1}</span>
           <b>{agent?.name || step.agentId}</b>
           <small>{agent?.role || 'Agent step'}</small>
           <em>{step.loops || 1} loop{Number(step.loops || 1) === 1 ? '' : 's'}</em>
-        </button>;
+        </div>;
       })}
     </div>}
   </div>;
 }
 
-function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, providers, updateStep, close }) {
+function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, providers, settings, updateStep, close }) {
   if (!step) return null;
   const agentSkills = (agent?.skills || []).map(id => skills.find(skill => skill.id === id)?.name || id);
   const agentMcps = (agent?.mcps || []).map(id => mcps.find(mcp => mcp.id === id)?.name || id);
+  const iotSources = settings?.iotSources || [];
+  const iotActions = settings?.iotActions || [];
   const updateAgent = (patch) => {
     if (!agent) return;
     setAgents(agents.map(item => item.id === agent.id ? { ...item, ...patch } : item));
+  };
+  const toggleStepList = (key, id) => {
+    const current = step[key] || [];
+    updateStep(step.id, { [key]: current.includes(id) ? current.filter(item => item !== id) : [...current, id] });
   };
   const chooseProvider = (providerId) => {
     const provider = providers.find(item => item.id === providerId);
@@ -328,6 +359,14 @@ function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, prov
       <label>Loops <input type="number" min="1" max="10" value={step.loops || 1} onChange={event => updateStep(step.id, { loops: event.target.value })} /></label>
       <label>Cron <input value={step.cron || ''} onChange={event => updateStep(step.id, { cron: event.target.value })} placeholder="optional" /></label>
     </div>
+    {!!iotSources.length && <div className="drawer-meta">
+      <b>IoT input sources</b>
+      <div className="mini-checks">{iotSources.map(source => <label key={source.id}><input type="checkbox" checked={(step.iotSourceIds || []).includes(source.id)} onChange={() => toggleStepList('iotSourceIds', source.id)} /> {source.name}</label>)}</div>
+    </div>}
+    {!!iotActions.length && <div className="drawer-meta">
+      <b>IoT device actions</b>
+      <div className="mini-checks">{iotActions.map(action => <label key={action.id}><input type="checkbox" checked={(step.iotActionIds || []).includes(action.id)} onChange={() => toggleStepList('iotActionIds', action.id)} /> {action.name}</label>)}</div>
+    </div>}
     <label className="check-row"><input type="checkbox" checked={step.dependsOnPrevious !== false} onChange={event => updateStep(step.id, { dependsOnPrevious: event.target.checked })} /> Use previous output</label>
     <div className="drawer-meta"><b>Agent skills</b><span>{agentSkills.join(', ') || 'No skills'}</span></div>
     <div className="drawer-meta"><b>MCP connectors</b><span>{agentMcps.join(', ') || 'No MCP connectors'}</span></div>
@@ -386,6 +425,21 @@ function SavedFlowsPage({ setPage, setFlow, setMeta }) {
 function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
   const empty = { id: '', name: '', role: '', provider: 'openai', model: 'gpt-4.1-mini', temperature: 0.2, skills: [], mcps: [], systemPrompt: '' };
   const [draft, setDraft] = useState(empty);
+  const [loadingAgents, setLoadingAgents] = useState(false);
+  useEffect(() => {
+    if (agents.length) return;
+    let alive = true;
+    setLoadingAgents(true);
+    fetch(`${API}/agents`)
+      .then(response => response.json())
+      .then(items => {
+        if (!alive || !Array.isArray(items)) return;
+        setAgents(items);
+      })
+      .catch(() => null)
+      .finally(() => { if (alive) setLoadingAgents(false); });
+    return () => { alive = false; };
+  }, [agents.length]);
   const markdown = useMemo(() => `# ${draft.name || 'Agent'}\n\n## Role\n${draft.role}\n\n## Provider\n${draft.provider || 'openai'}\n\n## Model\n${draft.model}\n\n## Temperature\n${draft.temperature}\n\n## Skills\n${(draft.skills || []).map(id => `- ${skills.find(s => s.id === id)?.name || id}`).join('\n')}\n\n## MCP\n${(draft.mcps || []).map(id => `- ${mcps.find(m => m.id === id)?.name || id}`).join('\n')}\n\n## System Prompt\n${draft.systemPrompt}\n`, [draft, skills, mcps]);
   const toggle = (key, id) => setDraft(d => ({ ...d, [key]: d[key].includes(id) ? d[key].filter(x => x !== id) : [...d[key], id] }));
   const changeProvider = (providerId) => {
@@ -393,7 +447,7 @@ function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
     setDraft({ ...draft, provider: providerId, model: provider?.defaultModel || draft.model });
   };
   const saveAgent = async () => { const agent = { ...draft, id: draft.id || slug(draft.name) || uuid() }; const next = agents.filter(a => a.id !== agent.id).concat(agent); setAgents(next); await fetch(`${API}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(agent) }).catch(() => null); setDraft(empty); };
-  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two"><div className="panel form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
+  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two"><div className="panel form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{loadingAgents && <div className="muted">Loading agents...</div>}{!loadingAgents && !agents.length && <div className="muted">No agents loaded yet. Check API connection or create the first agent.</div>}{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
 }
 
 function WorkspacePage() {

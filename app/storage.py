@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from .config import LEGACY_DB_FILE
 from .database import read_state, write_state
+from .settings_service import default_runtime_settings
 from .registry import default_agents, default_mcps, default_skills
 
 
@@ -16,12 +17,13 @@ def initial_db() -> dict[str, Any]:
         "mcps": default_mcps(),
         "flows": [],
         "runs": [],
+        "settings": [default_runtime_settings()],
     }
 
 
 def read_db() -> dict[str, Any]:
     db = read_state()
-    if not any(db.get(key) for key in ("agents", "skills", "mcps", "flows", "runs", "savedSequences")):
+    if not any(db.get(key) for key in ("agents", "skills", "mcps", "flows", "runs", "savedSequences", "settings")):
         if LEGACY_DB_FILE.exists():
             try:
                 db = json.loads(LEGACY_DB_FILE.read_text(encoding="utf-8"))
@@ -38,6 +40,7 @@ def read_db() -> dict[str, Any]:
     db.setdefault("flows", [])
     db.setdefault("runs", [])
     db.setdefault("savedSequences", [])
+    db.setdefault("settings", [default_runtime_settings()])
     return db
 
 

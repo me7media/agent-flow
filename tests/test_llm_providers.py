@@ -21,17 +21,35 @@ class LlmProviderTests(unittest.TestCase):
         self.assertIn('```file path="app/generated_feature.py"', output)
         self.assertIn('```file path="tests/test_generated_feature.py"', output)
 
+    def test_openai_response_text_extraction_handles_nested_output(self):
+        data = {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": '```file path="README.md"\n# ok\n```',
+                        }
+                    ]
+                }
+            ]
+        }
+
+        self.assertIn('file path="README.md"', llm._extract_openai_text(data))
+
 
 class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.original_gemini_key = llm.config.GEMINI_API_KEY
         self.original_anthropic_key = llm.config.ANTHROPIC_API_KEY
+        self.original_call_openai = llm._call_openai
         self.original_call_gemini = llm._call_gemini
         self.original_call_anthropic = llm._call_anthropic
 
     async def asyncTearDown(self):
         llm.config.GEMINI_API_KEY = self.original_gemini_key
         llm.config.ANTHROPIC_API_KEY = self.original_anthropic_key
+        llm._call_openai = self.original_call_openai
         llm._call_gemini = self.original_call_gemini
         llm._call_anthropic = self.original_call_anthropic
 
@@ -49,7 +67,7 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
         llm.config.GEMINI_API_KEY = "test-key"
         captured = {}
 
-        async def fake_gemini(model, temperature, prompt):
+        async def fake_gemini(model, temperature, prompt, api_key=None):
             captured.update({"model": model, "temperature": temperature, "prompt": prompt})
             return "gemini ok"
 
@@ -64,7 +82,7 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
         llm.config.ANTHROPIC_API_KEY = "test-key"
         captured = {}
 
-        async def fake_anthropic(model, temperature, prompt):
+        async def fake_anthropic(model, temperature, prompt, api_key=None):
             captured.update({"model": model, "temperature": temperature, "prompt": prompt})
             return "claude ok"
 
@@ -74,6 +92,52 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(output, "claude ok")
         self.assertEqual(captured["model"], "claude-3-5-sonnet-latest")
+
+    async def test_runtime_settings_key_configures_cloud_provider(self):
+        llm.config.GEMINI_API_KEY = ""
+        captured = {}
+
+        async def fake_gemini(model, temperature, prompt, api_key=None):
+            captured.update({"model": model, "api_key": api_key})
+            return "runtime gemini ok"
+
+        llm._call_gemini = fake_gemini
+        runtime_settings = {
+            "llmProviders": [
+                {"id": "gemini", "name": "Gemini", "enabled": True, "defaultModel": "gemini-runtime", "apiKey": "runtime-key"}
+            ]
+        }
+
+        output = await llm.call_llm(provider="gemini", temperature=0.2, prompt="hello", runtime_settings=runtime_settings)
+
+        self.assertEqual(output, "runtime gemini ok")
+        self.assertEqual(captured, {"model": "gemini-runtime", "api_key": "runtime-key"})
+
+    async def test_custom_openai_compatible_provider_uses_runtime_base_url(self):
+        captured = {}
+
+        async def fake_openai(model, temperature, prompt, api_key=None, base_url=None):
+            captured.update({"model": model, "api_key": api_key, "base_url": base_url})
+            return "custom ok"
+
+        llm._call_openai = fake_openai
+        runtime_settings = {
+            "llmProviders": [
+                {
+                    "id": "local-openai",
+                    "name": "Local OpenAI-compatible",
+                    "providerKind": "openai",
+                    "defaultModel": "local-model",
+                    "apiKey": "local-key",
+                    "baseUrl": "http://localhost:9999/v1",
+                }
+            ]
+        }
+
+        output = await llm.call_llm(provider="local-openai", temperature=0.2, prompt="hello", runtime_settings=runtime_settings)
+
+        self.assertEqual(output, "custom ok")
+        self.assertEqual(captured, {"model": "local-model", "api_key": "local-key", "base_url": "http://localhost:9999/v1"})
 
 
 if __name__ == "__main__":

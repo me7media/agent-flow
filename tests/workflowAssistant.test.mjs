@@ -39,3 +39,18 @@ test('appends planned steps without mutating existing flow', () => {
   assert.equal(merged[0].id, 'existing-step');
   assert.notEqual(merged[1].id, planned[0].id);
 });
+
+test('plans IoT workflows with signal, safety and control agents', () => {
+  const plan = buildWorkflowFromPrompt({
+    prompt: 'IoT: розпізнати жест з камери та відкрити ворота після safety approval',
+    agents: [],
+    idFactory: ids()
+  });
+  const roleKeys = plan.steps.map(step => step.roleKey);
+  assert.ok(roleKeys.includes('iot_source'));
+  assert.ok(roleKeys.includes('vision'));
+  assert.ok(roleKeys.includes('iot_safety'));
+  assert.ok(roleKeys.includes('iot_control'));
+  assert.equal(roleKeys.includes('developer'), false);
+  assert.ok(plan.agents.some(agent => agent.skills.includes('device_control')));
+});

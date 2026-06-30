@@ -8,37 +8,88 @@ from typing import Any
 import httpx
 
 from . import config
+from .settings_service import provider_config
 
 
-def available_providers() -> list[dict[str, Any]]:
-    return [
+def available_providers(runtime_settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    base = [
         {"id": "mock", "name": "Mock", "configured": True, "defaultModel": "mock-model"},
         {"id": "openai", "name": "OpenAI", "configured": bool(config.OPENAI_API_KEY), "defaultModel": config.OPENAI_MODEL},
         {"id": "ollama", "name": "Ollama", "configured": True, "defaultModel": config.OLLAMA_MODEL, "baseUrl": config.OLLAMA_BASE_URL},
         {"id": "gemini", "name": "Gemini", "configured": bool(config.GEMINI_API_KEY), "defaultModel": config.GEMINI_MODEL},
         {"id": "anthropic", "name": "Claude", "configured": bool(config.ANTHROPIC_API_KEY), "defaultModel": config.ANTHROPIC_MODEL},
     ]
+    if not runtime_settings:
+        return base
+    configured: list[dict[str, Any]] = []
+    seen = set()
+    for provider in base:
+        runtime = provider_config(runtime_settings, provider["id"])
+        api_key = runtime.get("apiKey")
+        item = {
+            **provider,
+            "name": runtime.get("name") or provider["name"],
+            "enabled": runtime.get("enabled", True),
+            "defaultModel": runtime.get("defaultModel") or provider["defaultModel"],
+        }
+        if runtime.get("baseUrl"):
+            item["baseUrl"] = runtime["baseUrl"]
+        if api_key:
+            item["configured"] = True
+        configured.append(item)
+        seen.add(item["id"])
+    for runtime in runtime_settings.get("llmProviders") or []:
+        if not runtime.get("id") or runtime["id"] in seen:
+            continue
+        configured.append(
+            {
+                "id": runtime["id"],
+                "name": runtime.get("name") or runtime["id"],
+                "enabled": runtime.get("enabled", True),
+                "configured": bool(runtime.get("apiKey") or runtime.get("baseUrl")),
+                "defaultModel": runtime.get("defaultModel") or "",
+                "baseUrl": runtime.get("baseUrl") or "",
+                "providerKind": runtime.get("providerKind") or "openai",
+            }
+        )
+    return configured
 
 
-async def call_llm(provider: str | None = None, model: str | None = None, temperature: Any = None, prompt: str = "") -> str:
+async def call_llm(
+    provider: str | None = None,
+    model: str | None = None,
+    temperature: Any = None,
+    prompt: str = "",
+    runtime_settings: dict[str, Any] | None = None,
+) -> str:
+    requested_provider = str(provider or "").strip().lower()
+    runtime = provider_config(runtime_settings, requested_provider)
     provider_id = _normalize_provider(provider, model)
+    if runtime.get("id") and requested_provider not in {"mock", "openai", "ollama", "gemini", "anthropic", "claude"}:
+        provider_id = str(runtime.get("providerKind") or "openai").strip().lower()
+    else:
+        runtime = provider_config(runtime_settings, provider_id)
+    selected_model = model or runtime.get("defaultModel")
     if provider_id == "mock":
-        return mock_llm(model=model, temperature=temperature, prompt=prompt)
+        return mock_llm(model=selected_model, temperature=temperature, prompt=prompt)
     if provider_id == "openai":
-        if not config.OPENAI_API_KEY:
-            return mock_llm(model=model or config.OPENAI_MODEL, temperature=temperature, prompt=prompt)
-        return await _call_openai(model=model, temperature=temperature, prompt=prompt)
+        api_key = runtime.get("apiKey") or config.OPENAI_API_KEY
+        if not api_key:
+            return mock_llm(model=selected_model or config.OPENAI_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_openai(model=selected_model, temperature=temperature, prompt=prompt, api_key=api_key, base_url=runtime.get("baseUrl"))
     if provider_id == "ollama":
-        return await _call_ollama(model=model, temperature=temperature, prompt=prompt)
+        return await _call_ollama(model=selected_model, temperature=temperature, prompt=prompt, base_url=runtime.get("baseUrl"))
     if provider_id == "gemini":
-        if not config.GEMINI_API_KEY:
-            return mock_llm(model=model or config.GEMINI_MODEL, temperature=temperature, prompt=prompt)
-        return await _call_gemini(model=model, temperature=temperature, prompt=prompt)
+        api_key = runtime.get("apiKey") or config.GEMINI_API_KEY
+        if not api_key:
+            return mock_llm(model=selected_model or config.GEMINI_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_gemini(model=selected_model, temperature=temperature, prompt=prompt, api_key=api_key)
     if provider_id in {"anthropic", "claude"}:
-        if not config.ANTHROPIC_API_KEY:
-            return mock_llm(model=model or config.ANTHROPIC_MODEL, temperature=temperature, prompt=prompt)
-        return await _call_anthropic(model=model, temperature=temperature, prompt=prompt)
-    return mock_llm(model=model, temperature=temperature, prompt=prompt)
+        api_key = runtime.get("apiKey") or config.ANTHROPIC_API_KEY
+        if not api_key:
+            return mock_llm(model=selected_model or config.ANTHROPIC_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_anthropic(model=selected_model, temperature=temperature, prompt=prompt, api_key=api_key)
+    return mock_llm(model=selected_model, temperature=temperature, prompt=prompt)
 
 
 def _normalize_provider(provider: str | None, model: str | None) -> str:
@@ -57,14 +108,14 @@ def _normalize_provider(provider: str | None, model: str | None) -> str:
     return str(config.DEFAULT_LLM_PROVIDER or ("openai" if config.OPENAI_API_KEY else "mock")).lower()
 
 
-async def _call_openai(model: str | None, temperature: Any, prompt: str) -> str:
+async def _call_openai(model: str | None, temperature: Any, prompt: str, api_key: str | None = None, base_url: str | None = None) -> str:
     numeric_temperature = _to_number(temperature, 0.2)
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
-            "https://api.openai.com/v1/responses",
+            f"{(base_url or 'https://api.openai.com/v1').rstrip('/')}/responses",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {config.OPENAI_API_KEY}",
+                "Authorization": f"Bearer {api_key or config.OPENAI_API_KEY}",
             },
             json={
                 "model": model or config.OPENAI_MODEL or "gpt-4.1-mini",
@@ -75,15 +126,24 @@ async def _call_openai(model: str | None, temperature: Any, prompt: str) -> str:
     if response.status_code >= 400:
         raise RuntimeError(f"OpenAI error {response.status_code}: {response.text}")
     data = response.json()
-    return data.get("output_text") or json.dumps(data, ensure_ascii=False, indent=2)
+    return data.get("output_text") or _extract_openai_text(data) or json.dumps(data, ensure_ascii=False, indent=2)
 
 
-async def _call_ollama(model: str | None, temperature: Any, prompt: str) -> str:
+def _extract_openai_text(data: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for item in data.get("output") or []:
+        for content in item.get("content") or []:
+            if isinstance(content, dict) and content.get("text"):
+                chunks.append(str(content["text"]))
+    return "\n".join(chunks).strip()
+
+
+async def _call_ollama(model: str | None, temperature: Any, prompt: str, base_url: str | None = None) -> str:
     numeric_temperature = _to_number(temperature, 0.2)
     selected_model = (model or config.OLLAMA_MODEL).removeprefix("ollama/")
     async with httpx.AsyncClient(timeout=180) as client:
         response = await client.post(
-            f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/generate",
+            f"{(base_url or config.OLLAMA_BASE_URL).rstrip('/')}/api/generate",
             json={
                 "model": selected_model,
                 "prompt": prompt,
@@ -97,14 +157,14 @@ async def _call_ollama(model: str | None, temperature: Any, prompt: str) -> str:
     return data.get("response") or json.dumps(data, ensure_ascii=False, indent=2)
 
 
-async def _call_gemini(model: str | None, temperature: Any, prompt: str) -> str:
+async def _call_gemini(model: str | None, temperature: Any, prompt: str, api_key: str | None = None) -> str:
     numeric_temperature = _to_number(temperature, 0.2)
     selected_model = model or config.GEMINI_MODEL
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
             url,
-            params={"key": config.GEMINI_API_KEY},
+            params={"key": api_key or config.GEMINI_API_KEY},
             json={
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": numeric_temperature},
@@ -118,14 +178,14 @@ async def _call_gemini(model: str | None, temperature: Any, prompt: str) -> str:
     return text or json.dumps(data, ensure_ascii=False, indent=2)
 
 
-async def _call_anthropic(model: str | None, temperature: Any, prompt: str) -> str:
+async def _call_anthropic(model: str | None, temperature: Any, prompt: str, api_key: str | None = None) -> str:
     numeric_temperature = _to_number(temperature, 0.2)
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
                 "Content-Type": "application/json",
-                "x-api-key": config.ANTHROPIC_API_KEY,
+                "x-api-key": api_key or config.ANTHROPIC_API_KEY,
                 "anthropic-version": "2023-06-01",
             },
             json={

@@ -13,9 +13,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import config
 from .emailer import send_email
+from .iot import default_iot_agents, default_iot_flows, default_iot_mcps, default_iot_skills, normalize_signal, simulate_action
 from .llm import available_providers
 from .registry import advanced_agents, advanced_flows, advanced_mcps, advanced_skills, default_agents, default_flows, default_mcps, default_skills
 from .runner import run_flow
+from .settings_service import get_runtime_settings, public_runtime_settings, upsert_runtime_settings
 from .storage import read_db, write_db
 from .workspace import git_info, read_text_file, resolve_workspace_root, scan_folder, write_text_file
 
@@ -49,12 +51,13 @@ def merge_by_id(current: list[dict[str, Any]] | None, defaults: list[dict[str, A
 
 
 def seed_db(db: dict[str, Any]) -> dict[str, Any]:
-    db["agents"] = merge_by_id(db.get("agents"), [*default_agents(), *advanced_agents()])
-    db["skills"] = merge_by_id(db.get("skills"), [*default_skills(), *advanced_skills()])
-    db["mcps"] = merge_by_id(db.get("mcps"), [*default_mcps(), *advanced_mcps()])
-    db["flows"] = merge_by_id(db.get("flows"), [*default_flows(), *advanced_flows()])
+    db["agents"] = merge_by_id(db.get("agents"), [*default_agents(), *advanced_agents(), *default_iot_agents()])
+    db["skills"] = merge_by_id(db.get("skills"), [*default_skills(), *advanced_skills(), *default_iot_skills()])
+    db["mcps"] = merge_by_id(db.get("mcps"), [*default_mcps(), *advanced_mcps(), *default_iot_mcps()])
+    db["flows"] = merge_by_id(db.get("flows"), [*default_flows(), *advanced_flows(), *default_iot_flows()])
     db.setdefault("runs", [])
     db.setdefault("savedSequences", [])
+    upsert_runtime_settings(db, get_runtime_settings(db))
     return db
 
 
@@ -133,6 +136,7 @@ def schedule_flow(flow: dict[str, Any]) -> bool:
                 loops=flow.get("loops"),
                 workspace_root=flow.get("workspaceRoot") or config.WORKSPACE_ROOT or "",
                 loop_groups=flow.get("loopGroups") or [],
+                runtime_settings=get_runtime_settings(db),
             )
             db["runs"].append({"id": str(uuid.uuid4()), "flowId": flow_id, "createdAt": iso_now(), "logs": logs})
             write_db(db)
@@ -151,12 +155,15 @@ def error(message: str, status_code: int) -> JSONResponse:
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
-    providers = available_providers()
+    db = seed_db(read_db())
+    runtime_settings = get_runtime_settings(db)
+    providers = available_providers(runtime_settings)
     active_provider = config.DEFAULT_LLM_PROVIDER or ("openai" if config.OPENAI_API_KEY else "mock")
     return {
         "ok": True,
         "provider": active_provider,
         "providers": providers,
+        "settings": public_runtime_settings(runtime_settings),
         "workspaceRoot": str(resolve_workspace_root(config.WORKSPACE_ROOT)),
     }
 
@@ -165,12 +172,67 @@ async def health() -> dict[str, Any]:
 async def registry() -> dict[str, Any]:
     db = seed_db(read_db())
     write_db(db)
-    return {"agents": db["agents"], "skills": db["skills"], "mcps": db["mcps"], "providers": available_providers()}
+    runtime_settings = get_runtime_settings(db)
+    return {
+        "agents": db["agents"],
+        "skills": db["skills"],
+        "mcps": db["mcps"],
+        "providers": available_providers(runtime_settings),
+        "settings": public_runtime_settings(runtime_settings),
+    }
 
 
 @app.get("/api/providers")
 async def providers() -> list[dict[str, Any]]:
-    return available_providers()
+    db = seed_db(read_db())
+    return available_providers(get_runtime_settings(db))
+
+
+@app.get("/api/settings")
+async def settings() -> dict[str, Any]:
+    db = seed_db(read_db())
+    return public_runtime_settings(get_runtime_settings(db))
+
+
+@app.put("/api/settings")
+async def save_settings(request: Request) -> dict[str, Any]:
+    body = await request.json()
+    db = seed_db(read_db())
+    runtime_settings = upsert_runtime_settings(db, body)
+    write_db(db)
+    return {"ok": True, "settings": public_runtime_settings(runtime_settings), "providers": available_providers(runtime_settings)}
+
+
+@app.get("/api/iot/pipelines")
+async def iot_pipelines() -> list[dict[str, Any]]:
+    db = seed_db(read_db())
+    return [flow for flow in db["flows"] if flow.get("category") == "iot"]
+
+
+@app.get("/api/iot/catalog")
+async def iot_catalog() -> dict[str, Any]:
+    db = seed_db(read_db())
+    runtime_settings = get_runtime_settings(db)
+    public = public_runtime_settings(runtime_settings)
+    return {"sources": public["iotSources"], "actions": public["iotActions"]}
+
+
+@app.post("/api/iot/signals")
+async def iot_signal(request: Request) -> dict[str, Any]:
+    db = seed_db(read_db())
+    signal = normalize_signal(await request.json(), get_runtime_settings(db))
+    return {"ok": True, "signal": signal.__dict__}
+
+
+@app.post("/api/iot/actions/test")
+async def iot_action_test(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+        db = seed_db(read_db())
+        result = simulate_action(body.get("actionId") or "", body.get("command") or "", get_runtime_settings(db))
+        return ok(result)
+    except Exception as exc:
+        return error(str(exc), 400)
 
 
 @app.get("/api/agents")
@@ -229,6 +291,7 @@ async def run_flow_route(request: Request) -> JSONResponse:
             loops=body.get("loops") or 1,
             workspace_root=body.get("workspaceRoot") or config.WORKSPACE_ROOT or "",
             loop_groups=body.get("loopGroups") or [],
+            runtime_settings=get_runtime_settings(db),
         )
         run = {"id": str(uuid.uuid4()), "createdAt": iso_now(), "logs": logs}
         db["runs"].append(run)
@@ -261,6 +324,7 @@ async def run_flow_stream(request: Request) -> StreamingResponse:
                     loops=body.get("loops") or 1,
                     workspace_root=body.get("workspaceRoot") or config.WORKSPACE_ROOT or "",
                     loop_groups=body.get("loopGroups") or [],
+                    runtime_settings=get_runtime_settings(db),
                     on_event=send,
                 )
                 run = {"id": str(uuid.uuid4()), "createdAt": iso_now(), "logs": logs}

@@ -6,7 +6,9 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from .iot import IoTContextBuilder
 from .llm import call_llm
+from .settings_service import agent_execution_config
 from .workspace import git_info, read_text_file, scan_folder, write_text_file
 
 EventHandler = Callable[[dict[str, Any]], Any]
@@ -98,13 +100,32 @@ async def _emit(on_event: EventHandler | None, event: dict[str, Any]) -> None:
         await result
 
 
-async def _write_generated_file_blocks(agent: dict[str, Any], workspace_root: str, output: str, on_event: EventHandler | None) -> list[str]:
+def _should_write_directly(runtime_settings: dict[str, Any] | None) -> bool:
+    execution = agent_execution_config(runtime_settings)
+    mode = str(execution.get("fileWriteMode") or "").lower()
+    if mode:
+        return mode == "direct"
+    return (os.getenv("AGENT_ALLOW_DIRECT_FILE_WRITES") or "").lower() == "true"
+
+
+def _max_file_blocks(runtime_settings: dict[str, Any] | None) -> int:
+    execution = agent_execution_config(runtime_settings)
+    return _clamp_int(execution.get("maxFileBlocks", 20), 1, 100, 20)
+
+
+async def _write_generated_file_blocks(
+    agent: dict[str, Any],
+    workspace_root: str,
+    output: str,
+    runtime_settings: dict[str, Any] | None,
+    on_event: EventHandler | None,
+) -> list[str]:
     blocks = _extract_file_blocks(output)
     if not workspace_root or not blocks:
         return []
-    direct_writes = (os.getenv("AGENT_ALLOW_DIRECT_FILE_WRITES") or "").lower() == "true"
+    direct_writes = _should_write_directly(runtime_settings)
     written: list[str] = []
-    for block in blocks[:20]:
+    for block in blocks[: _max_file_blocks(runtime_settings)]:
         target_path = block["path"] if direct_writes else f"agent-flow-output/generated/{_safe_name(agent.get('name'))}/{block['path']}"
         try:
             path = write_text_file(workspace_root, target_path, block["content"])
@@ -165,10 +186,12 @@ async def _run_single_step(
     global_loop: int,
     group_loop: int | None,
     local_loop: int,
+    runtime_settings: dict[str, Any] | None,
     on_event: EventHandler | None,
 ) -> dict[str, Any]:
     ctx = _agent_context(agent, skills, mcps)
     project_context = ""
+    iot_context = IoTContextBuilder(runtime_settings).context_for_step(step, agent)
     agent_name = agent.get("name")
 
     await _emit(
@@ -213,18 +236,20 @@ async def _run_single_step(
         )
 
     incoming_output = "" if step.get("dependsOnPrevious") is False else previous_output
-    direct_writes = (os.getenv("AGENT_ALLOW_DIRECT_FILE_WRITES") or "").lower() == "true"
+    direct_writes = _should_write_directly(runtime_settings)
     write_mode = (
-        "DIRECT WRITE MODE IS ENABLED. When code changes are required, output complete file blocks using real project-relative paths such as app/services/example.py, src/components/Example.jsx, tests/test_example.py or nested folders that should be created."
+        "DIRECT WRITE MODE IS ENABLED FROM RUNTIME SETTINGS. When code changes are required, output complete file blocks using real project-relative paths such as app/services/example.py, src/components/Example.jsx, tests/test_example.py or nested folders that should be created. The backend will write these files directly."
         if direct_writes
-        else "DIRECT WRITE MODE IS DISABLED. Still output complete file blocks with the intended real project-relative paths. The backend will stage them under agent-flow-output/generated/<agent>/ for human review instead of overwriting source files."
+        else "DIRECT WRITE MODE IS SET TO REVIEW/STAGING. Still output complete file blocks with the intended real project-relative paths. The backend will stage them under agent-flow-output/generated/<agent>/ for human review instead of overwriting source files."
     )
+    iot_context_block = f"\n\n{iot_context}" if iot_context else ""
     prompt = (
         f"{agent.get('systemPrompt') or ''}\n\nAGENT ROLE:\n{agent.get('role')}\n\nAGENT SKILLS:\n{ctx['skillsText']}\n\n"
         f"CONNECTED MCP:\n{ctx['mcpsText']}\n\nUSER TASK:\n{task}\n\nSTEP COMMENT / EXTRA PROMPT:\n{step.get('note') or '-'}\n\n"
-        f"PREVIOUS OUTPUT:\n{incoming_output or '-'}{project_context}\n\nIMPORTANT EXECUTION RULES:\n"
+        f"PREVIOUS OUTPUT:\n{incoming_output or '-'}{project_context}{iot_context_block}\n\nIMPORTANT EXECUTION RULES:\n"
         "- Return concrete, actionable output.\n- Do not answer with generic text. Produce real deliverables.\n"
         "- If you are a developer, include exact files, patch plan, and full code blocks.\n"
+        "- If this is an IoT workflow, identify the source signal, confidence, allowed device action, approval requirement and safe fallback.\n"
         f"- {write_mode}\n"
         "- To create files, use this exact format and relative paths only:\n\n"
         '```file path="src/example.js"\ncontent here\n```\n\n'
@@ -234,9 +259,15 @@ async def _run_single_step(
 
     started_at = _iso_now()
     await _emit(on_event, {"type": "llm_start", "agentName": agent_name, "message": "Calling model/provider..."})
-    output = await call_llm(provider=agent.get("provider"), model=agent.get("model"), temperature=agent.get("temperature"), prompt=prompt)
+    output = await call_llm(
+        provider=agent.get("provider"),
+        model=agent.get("model"),
+        temperature=agent.get("temperature"),
+        prompt=prompt,
+        runtime_settings=runtime_settings,
+    )
     artifact_path = await _write_agent_artifact(agent, workspace_root, output, index, global_loop, group_loop, local_loop, project_context, on_event)
-    generated_files = await _write_generated_file_blocks(agent, workspace_root, output, on_event)
+    generated_files = await _write_generated_file_blocks(agent, workspace_root, output, runtime_settings, on_event)
     log = {
         "step": index + 1,
         "loop": global_loop,
@@ -248,6 +279,8 @@ async def _run_single_step(
         "finishedAt": _iso_now(),
         "artifactPath": artifact_path,
         "generatedFiles": generated_files,
+        "iotSourceIds": step.get("iotSourceIds") or agent.get("iotSourceIds") or [],
+        "iotActionIds": step.get("iotActionIds") or agent.get("iotActionIds") or [],
         "output": output,
     }
     await _emit(on_event, {"type": "step_done", "log": log, "message": f"{agent_name} finished."})
@@ -263,6 +296,7 @@ async def run_flow(
     loops: Any = 1,
     workspace_root: str = "",
     loop_groups: list[dict[str, Any]] | None = None,
+    runtime_settings: dict[str, Any] | None = None,
     on_event: EventHandler | None = None,
 ) -> list[dict[str, Any]]:
     logs: list[dict[str, Any]] = []
@@ -287,7 +321,21 @@ async def run_flow(
                         if not agent:
                             continue
                         for local_loop in range(1, _clamp_int(step.get("loops", 1), 1, 10, 1) + 1):
-                            log = await _run_single_step(step, group_index, agent, skills, mcps, task, workspace_root, previous_output, global_loop, group_loop, local_loop, on_event)
+                            log = await _run_single_step(
+                                step,
+                                group_index,
+                                agent,
+                                skills,
+                                mcps,
+                                task,
+                                workspace_root,
+                                previous_output,
+                                global_loop,
+                                group_loop,
+                                local_loop,
+                                runtime_settings,
+                                on_event,
+                            )
                             previous_output = log["output"]
                             logs.append({**log, "loopGroupId": group.get("id"), "loopGroupName": group.get("name") or f"Steps {group['start'] + 1}-{group['end'] + 1}"})
                 await _emit(on_event, {"type": "group_done", "group": group, "message": "Loop group finished."})
@@ -300,7 +348,21 @@ async def run_flow(
                 index += 1
                 continue
             for local_loop in range(1, _clamp_int(step.get("loops", 1), 1, 10, 1) + 1):
-                log = await _run_single_step(step, index, agent, skills, mcps, task, workspace_root, previous_output, global_loop, None, local_loop, on_event)
+                log = await _run_single_step(
+                    step,
+                    index,
+                    agent,
+                    skills,
+                    mcps,
+                    task,
+                    workspace_root,
+                    previous_output,
+                    global_loop,
+                    None,
+                    local_loop,
+                    runtime_settings,
+                    on_event,
+                )
                 previous_output = log["output"]
                 logs.append(log)
             index += 1
