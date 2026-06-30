@@ -9,6 +9,13 @@ const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(k
 const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const normalizeFlow = (flow) => Array.isArray(flow) ? flow.map(step => ({ id: step.id || uuid(), note: '', cron: '', loops: 1, dependsOnPrevious: true, ...step })) : [];
 const normalizeLoopGroups = (groups, flowLength) => Array.isArray(groups) ? groups.map(g => ({ ...g, start: Number(g.start || 0), end: Number(g.end || 0), loops: Number(g.loops || 2) })).filter(g => g.start >= 0 && g.end > g.start && g.end < flowLength) : [];
+const providerOptions = [
+  { id: 'mock', name: 'Mock', defaultModel: 'mock-model' },
+  { id: 'openai', name: 'OpenAI', defaultModel: 'gpt-4.1-mini' },
+  { id: 'ollama', name: 'Ollama', defaultModel: 'llama3.1' },
+  { id: 'gemini', name: 'Gemini', defaultModel: 'gemini-1.5-flash' },
+  { id: 'anthropic', name: 'Claude', defaultModel: 'claude-3-5-sonnet-latest' }
+];
 
 function App() {
   const [page, setPage] = useState('flow');
@@ -16,6 +23,7 @@ function App() {
   const [health, setHealth] = useState({ provider: 'loading' });
   const [skills, setSkills] = useState([]);
   const [mcps, setMcps] = useState([]);
+  const [providers, setProviders] = useState(providerOptions);
   const [agents, setAgents] = useState(() => load('agents', []));
   const [flow, setFlow] = useState(() => load('activeFlow', []));
   const [flowMeta, setFlowMeta] = useState(() => load('activeFlowMeta', {}));
@@ -33,6 +41,7 @@ function App() {
       if (registry) {
         setSkills(registry.skills || []);
         setMcps(registry.mcps || []);
+        setProviders(registry.providers?.length ? registry.providers : h.providers || providerOptions);
         if (!agents.length) { setAgents(registry.agents || []); save('agents', registry.agents || []); }
       }
     });
@@ -80,10 +89,10 @@ function App() {
       <button className="ghost" onClick={() => setDark(!dark)}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
     </aside>
     <main>
-      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
       {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
-      {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} />}
+      {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} />}
       {page === 'workspace' && <WorkspacePage />}
       {page === 'skills' && <SkillsPage skills={skills} mcps={mcps} />}
     </main>
@@ -92,7 +101,7 @@ function App() {
 
 function Header({ title, subtitle }) { return <header className="header"><h1>{title}</h1><p>{subtitle}</p></header>; }
 
-function FlowPage({ agents, setAgents, skills, mcps, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
+function FlowPage({ agents, setAgents, skills, mcps, providers, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
   const [dragAgentId, setDragAgentId] = useState(null);
   const [dragStepIndex, setDragStepIndex] = useState(null);
   const [viewMode, setViewMode] = useState('chain');
@@ -240,7 +249,7 @@ function FlowPage({ agents, setAgents, skills, mcps, flow, setFlow, meta, setMet
         </div>}
       </div>
     </div>
-    <StepSettingsDrawer step={selectedStep} agent={selectedAgent} agents={agents} skills={skills} mcps={mcps} updateStep={updateStep} close={() => setSelectedStepId(null)} />
+    <StepSettingsDrawer step={selectedStep} agent={selectedAgent} agents={agents} setAgents={setAgents} skills={skills} mcps={mcps} providers={providers} updateStep={updateStep} close={() => setSelectedStepId(null)} />
     {error && <div className="error">{error}</div>}
   </section>;
 }
@@ -283,10 +292,18 @@ function WorkflowDiagram({ flow, agents, loopGroups, selectedStepId, setSelected
   </div>;
 }
 
-function StepSettingsDrawer({ step, agent, agents, skills, mcps, updateStep, close }) {
+function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, providers, updateStep, close }) {
   if (!step) return null;
   const agentSkills = (agent?.skills || []).map(id => skills.find(skill => skill.id === id)?.name || id);
   const agentMcps = (agent?.mcps || []).map(id => mcps.find(mcp => mcp.id === id)?.name || id);
+  const updateAgent = (patch) => {
+    if (!agent) return;
+    setAgents(agents.map(item => item.id === agent.id ? { ...item, ...patch } : item));
+  };
+  const chooseProvider = (providerId) => {
+    const provider = providers.find(item => item.id === providerId);
+    updateAgent({ provider: providerId, model: provider?.defaultModel || agent?.model || '' });
+  };
   return <aside className="step-drawer">
     <div className="drawer-head"><div><b>Step settings</b><span>{agent?.name || step.agentId}</span></div><button onClick={close}>Close</button></div>
     <label>Agent
@@ -294,6 +311,16 @@ function StepSettingsDrawer({ step, agent, agents, skills, mcps, updateStep, clo
         {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
     </label>
+    <div className="drawer-grid">
+      <label>Provider
+        <select value={agent?.provider || 'openai'} onChange={event => chooseProvider(event.target.value)}>
+          {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}
+        </select>
+      </label>
+      <label>Model
+        <input value={agent?.model || ''} onChange={event => updateAgent({ model: event.target.value })} placeholder="model name" />
+      </label>
+    </div>
     <label>Extra prompt
       <textarea value={step.note || ''} onChange={event => updateStep(step.id, { note: event.target.value })} />
     </label>
@@ -356,13 +383,17 @@ function SavedFlowsPage({ setPage, setFlow, setMeta }) {
   return <section><Header title="Pipelines" subtitle="Saved workflow configurations with task, workspace path, cron, ordered steps and visible loop groups." /><div className="panel">{!flows.length && <p>No pipelines yet.</p>}{flows.map(flow => <div className="saved" key={flow.id}><div><b>{flow.name}</b><span>{flow.steps?.length || 0} steps · chain loops {flow.loops || 1} · loop groups {flow.loopGroups?.length || 0} · cron {flow.cron || 'none'}</span><small>{flow.task}</small></div><button onClick={() => { const steps = normalizeFlow(flow.steps || []); const safe = { ...flow, steps, loopGroups: normalizeLoopGroups(flow.loopGroups || [], steps.length) }; save('activeFlowMeta', safe); save('activeFlow', steps); setMeta(safe); setFlow(steps); setPage('flow'); }}>Load</button><button onClick={() => remove(flow.id)}>Delete</button></div>)}</div></section>;
 }
 
-function AgentBuilder({ agents, setAgents, skills, mcps }) {
-  const empty = { id: '', name: '', role: '', model: 'gpt-4.1-mini', temperature: 0.2, skills: [], mcps: [], systemPrompt: '' };
+function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
+  const empty = { id: '', name: '', role: '', provider: 'openai', model: 'gpt-4.1-mini', temperature: 0.2, skills: [], mcps: [], systemPrompt: '' };
   const [draft, setDraft] = useState(empty);
-  const markdown = useMemo(() => `# ${draft.name || 'Agent'}\n\n## Role\n${draft.role}\n\n## Model\n${draft.model}\n\n## Temperature\n${draft.temperature}\n\n## Skills\n${(draft.skills || []).map(id => `- ${skills.find(s => s.id === id)?.name || id}`).join('\n')}\n\n## MCP\n${(draft.mcps || []).map(id => `- ${mcps.find(m => m.id === id)?.name || id}`).join('\n')}\n\n## System Prompt\n${draft.systemPrompt}\n`, [draft, skills, mcps]);
+  const markdown = useMemo(() => `# ${draft.name || 'Agent'}\n\n## Role\n${draft.role}\n\n## Provider\n${draft.provider || 'openai'}\n\n## Model\n${draft.model}\n\n## Temperature\n${draft.temperature}\n\n## Skills\n${(draft.skills || []).map(id => `- ${skills.find(s => s.id === id)?.name || id}`).join('\n')}\n\n## MCP\n${(draft.mcps || []).map(id => `- ${mcps.find(m => m.id === id)?.name || id}`).join('\n')}\n\n## System Prompt\n${draft.systemPrompt}\n`, [draft, skills, mcps]);
   const toggle = (key, id) => setDraft(d => ({ ...d, [key]: d[key].includes(id) ? d[key].filter(x => x !== id) : [...d[key], id] }));
+  const changeProvider = (providerId) => {
+    const provider = providers.find(item => item.id === providerId);
+    setDraft({ ...draft, provider: providerId, model: provider?.defaultModel || draft.model });
+  };
   const saveAgent = async () => { const agent = { ...draft, id: draft.id || slug(draft.name) || uuid() }; const next = agents.filter(a => a.id !== agent.id).concat(agent); setAgents(next); await fetch(`${API}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(agent) }).catch(() => null); setDraft(empty); };
-  return <section><Header title="Agent builder" subtitle="Create an agent, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two"><div className="panel form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.role}</span></div><button onClick={() => setDraft(JSON.parse(JSON.stringify(a)))}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
+  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two"><div className="panel form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
 }
 
 function WorkspacePage() {

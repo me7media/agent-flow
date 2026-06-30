@@ -234,7 +234,7 @@ async def _run_single_step(
 
     started_at = _iso_now()
     await _emit(on_event, {"type": "llm_start", "agentName": agent_name, "message": "Calling model/provider..."})
-    output = await call_llm(agent.get("model"), agent.get("temperature"), prompt)
+    output = await call_llm(provider=agent.get("provider"), model=agent.get("model"), temperature=agent.get("temperature"), prompt=prompt)
     artifact_path = await _write_agent_artifact(agent, workspace_root, output, index, global_loop, group_loop, local_loop, project_context, on_event)
     generated_files = await _write_generated_file_blocks(agent, workspace_root, output, on_event)
     log = {

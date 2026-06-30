@@ -10,10 +10,54 @@ import httpx
 from . import config
 
 
-async def call_llm(model: str | None, temperature: Any, prompt: str) -> str:
-    if not config.OPENAI_API_KEY:
-        return mock_llm(model=model, temperature=temperature, prompt=prompt)
+def available_providers() -> list[dict[str, Any]]:
+    return [
+        {"id": "mock", "name": "Mock", "configured": True, "defaultModel": "mock-model"},
+        {"id": "openai", "name": "OpenAI", "configured": bool(config.OPENAI_API_KEY), "defaultModel": config.OPENAI_MODEL},
+        {"id": "ollama", "name": "Ollama", "configured": True, "defaultModel": config.OLLAMA_MODEL, "baseUrl": config.OLLAMA_BASE_URL},
+        {"id": "gemini", "name": "Gemini", "configured": bool(config.GEMINI_API_KEY), "defaultModel": config.GEMINI_MODEL},
+        {"id": "anthropic", "name": "Claude", "configured": bool(config.ANTHROPIC_API_KEY), "defaultModel": config.ANTHROPIC_MODEL},
+    ]
 
+
+async def call_llm(provider: str | None = None, model: str | None = None, temperature: Any = None, prompt: str = "") -> str:
+    provider_id = _normalize_provider(provider, model)
+    if provider_id == "mock":
+        return mock_llm(model=model, temperature=temperature, prompt=prompt)
+    if provider_id == "openai":
+        if not config.OPENAI_API_KEY:
+            return mock_llm(model=model or config.OPENAI_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_openai(model=model, temperature=temperature, prompt=prompt)
+    if provider_id == "ollama":
+        return await _call_ollama(model=model, temperature=temperature, prompt=prompt)
+    if provider_id == "gemini":
+        if not config.GEMINI_API_KEY:
+            return mock_llm(model=model or config.GEMINI_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_gemini(model=model, temperature=temperature, prompt=prompt)
+    if provider_id in {"anthropic", "claude"}:
+        if not config.ANTHROPIC_API_KEY:
+            return mock_llm(model=model or config.ANTHROPIC_MODEL, temperature=temperature, prompt=prompt)
+        return await _call_anthropic(model=model, temperature=temperature, prompt=prompt)
+    return mock_llm(model=model, temperature=temperature, prompt=prompt)
+
+
+def _normalize_provider(provider: str | None, model: str | None) -> str:
+    value = str(provider or "").strip().lower()
+    if value in {"claude", "anthropic"}:
+        return "anthropic"
+    if value in {"mock", "openai", "ollama", "gemini"}:
+        return value
+    model_value = str(model or "").lower()
+    if model_value.startswith("ollama/"):
+        return "ollama"
+    if model_value.startswith("gemini"):
+        return "gemini"
+    if model_value.startswith("claude"):
+        return "anthropic"
+    return str(config.DEFAULT_LLM_PROVIDER or ("openai" if config.OPENAI_API_KEY else "mock")).lower()
+
+
+async def _call_openai(model: str | None, temperature: Any, prompt: str) -> str:
     numeric_temperature = _to_number(temperature, 0.2)
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
@@ -32,6 +76,71 @@ async def call_llm(model: str | None, temperature: Any, prompt: str) -> str:
         raise RuntimeError(f"OpenAI error {response.status_code}: {response.text}")
     data = response.json()
     return data.get("output_text") or json.dumps(data, ensure_ascii=False, indent=2)
+
+
+async def _call_ollama(model: str | None, temperature: Any, prompt: str) -> str:
+    numeric_temperature = _to_number(temperature, 0.2)
+    selected_model = (model or config.OLLAMA_MODEL).removeprefix("ollama/")
+    async with httpx.AsyncClient(timeout=180) as client:
+        response = await client.post(
+            f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/generate",
+            json={
+                "model": selected_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": numeric_temperature},
+            },
+        )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Ollama error {response.status_code}: {response.text}")
+    data = response.json()
+    return data.get("response") or json.dumps(data, ensure_ascii=False, indent=2)
+
+
+async def _call_gemini(model: str | None, temperature: Any, prompt: str) -> str:
+    numeric_temperature = _to_number(temperature, 0.2)
+    selected_model = model or config.GEMINI_MODEL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(
+            url,
+            params={"key": config.GEMINI_API_KEY},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": numeric_temperature},
+            },
+        )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Gemini error {response.status_code}: {response.text}")
+    data = response.json()
+    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    text = "".join(part.get("text", "") for part in parts)
+    return text or json.dumps(data, ensure_ascii=False, indent=2)
+
+
+async def _call_anthropic(model: str | None, temperature: Any, prompt: str) -> str:
+    numeric_temperature = _to_number(temperature, 0.2)
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": config.ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+            },
+            json={
+                "model": model or config.ANTHROPIC_MODEL,
+                "temperature": numeric_temperature,
+                "max_tokens": 4096,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Claude error {response.status_code}: {response.text}")
+    data = response.json()
+    content = data.get("content") or []
+    text = "".join(item.get("text", "") for item in content if item.get("type") == "text")
+    return text or json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def _to_number(value: Any, fallback: float) -> float:

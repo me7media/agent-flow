@@ -20,6 +20,7 @@ test('builds a workflow from prompt using preset agents', () => {
   assert.ok(plan.steps.length >= 5);
   assert.ok(plan.steps.some(step => step.agentId === 'autonomous-developer-v2'));
   assert.ok(plan.loopGroups.length >= 1);
+  assert.ok(plan.createdAgents.every(agent => agent.provider));
 });
 
 test('creates missing agents when presets are unavailable', () => {

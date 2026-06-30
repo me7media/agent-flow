@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import config
 from .emailer import send_email
+from .llm import available_providers
 from .registry import advanced_agents, advanced_flows, advanced_mcps, advanced_skills, default_agents, default_flows, default_mcps, default_skills
 from .runner import run_flow
 from .storage import read_db, write_db
@@ -150,9 +151,12 @@ def error(message: str, status_code: int) -> JSONResponse:
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
+    providers = available_providers()
+    active_provider = config.DEFAULT_LLM_PROVIDER or ("openai" if config.OPENAI_API_KEY else "mock")
     return {
         "ok": True,
-        "provider": "openai" if config.OPENAI_API_KEY else "mock",
+        "provider": active_provider,
+        "providers": providers,
         "workspaceRoot": str(resolve_workspace_root(config.WORKSPACE_ROOT)),
     }
 
@@ -161,7 +165,12 @@ async def health() -> dict[str, Any]:
 async def registry() -> dict[str, Any]:
     db = seed_db(read_db())
     write_db(db)
-    return {"agents": db["agents"], "skills": db["skills"], "mcps": db["mcps"]}
+    return {"agents": db["agents"], "skills": db["skills"], "mcps": db["mcps"], "providers": available_providers()}
+
+
+@app.get("/api/providers")
+async def providers() -> list[dict[str, Any]]:
+    return available_providers()
 
 
 @app.get("/api/agents")

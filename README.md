@@ -17,6 +17,7 @@ Full Agent Flow project with the original React/Vite UI and a Python/FastAPI bac
 - Safe git info endpoint using read-only git commands.
 - Mock LLM provider when `OPENAI_API_KEY` is empty.
 - OpenAI Responses API provider when `OPENAI_API_KEY` is configured.
+- Ollama, Gemini and Claude provider selection per agent.
 - HTTP action and SMTP email action endpoints.
 
 ## Run Locally
@@ -43,6 +44,13 @@ You can also run only the backend with `python run.py` or only the UI with `npm 
 PORT=8787
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
+DEFAULT_LLM_PROVIDER=openai
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-1.5-flash
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-3-5-sonnet-latest
 WORKSPACE_ROOT=./workspace
 EMAIL_HOST=
 EMAIL_PORT=587
@@ -52,6 +60,8 @@ EMAIL_FROM="Agent Flow <agent-flow@example.com>"
 EMAIL_SECURE=false
 AGENT_ALLOW_DIRECT_FILE_WRITES=false
 ```
+
+Agents can choose `mock`, `openai`, `ollama`, `gemini` or `anthropic`/Claude in Agent builder or from the workflow step drawer. Ollama uses the local `OLLAMA_BASE_URL`; Gemini requires `GEMINI_API_KEY`; Claude requires `ANTHROPIC_API_KEY`.
 
 When `AGENT_ALLOW_DIRECT_FILE_WRITES=false`, developer agents can still emit real `file` blocks, but the backend stages them under `agent-flow-output/generated/<agent>/` for review. When it is `true`, those same file blocks are written to their exact project-relative paths, including new folders.
 
