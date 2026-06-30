@@ -1,0 +1,1467 @@
+{
+  "agents": [
+    {
+      "id": "agent-1",
+      "name": "Research Agent",
+      "role": "Збір і перевірка контексту",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "research",
+        "api_connector"
+      ],
+      "mcps": [
+        "browser",
+        "filesystem",
+        "http"
+      ],
+      "systemPrompt": "Ти агент дослідження. Працюй фактологічно, відділяй припущення від підтверджених даних.",
+      "cron": ""
+    },
+    {
+      "id": "agent-2",
+      "name": "Planning Agent",
+      "role": "Планування виконання",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.3,
+      "skills": [
+        "planner",
+        "pm",
+        "calendar_scheduler"
+      ],
+      "mcps": [
+        "calendar"
+      ],
+      "systemPrompt": "Ти агент планування. Перетворюй задачу на чіткий план із залежностями.",
+      "cron": ""
+    },
+    {
+      "id": "agent-3",
+      "name": "Architecture Agent",
+      "role": "Архітектура системи",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "architect",
+        "security",
+        "database_query"
+      ],
+      "mcps": [
+        "database",
+        "filesystem"
+      ],
+      "systemPrompt": "Ти системний архітектор. Проєктуй модулі, дані, API та інтеграції.",
+      "cron": ""
+    },
+    {
+      "id": "agent-4",
+      "name": "Implementation Agent",
+      "role": "Реалізація коду",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.35,
+      "skills": [
+        "coder",
+        "github_operator",
+        "file_manager"
+      ],
+      "mcps": [
+        "github",
+        "filesystem"
+      ],
+      "systemPrompt": "Ти агент реалізації. Пиши чистий код і пояснюй важливі рішення.",
+      "cron": ""
+    },
+    {
+      "id": "agent-5",
+      "name": "QA Agent",
+      "role": "Тестування і контроль якості",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "tester",
+        "reviewer"
+      ],
+      "mcps": [
+        "github"
+      ],
+      "systemPrompt": "Ти QA-агент. Знаходь дефекти, edge cases і формуй перевірки.",
+      "cron": ""
+    },
+    {
+      "id": "agent-6",
+      "name": "Security Agent",
+      "role": "Аудит безпеки",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "security",
+        "database_query"
+      ],
+      "mcps": [
+        "database",
+        "github"
+      ],
+      "systemPrompt": "Ти агент безпеки. Шукай ризики доступу, даних, секретів, інʼєкцій.",
+      "cron": ""
+    },
+    {
+      "id": "agent-7",
+      "name": "Documentation Agent",
+      "role": "Документація результату",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.4,
+      "skills": [
+        "writer",
+        "file_manager"
+      ],
+      "mcps": [
+        "filesystem"
+      ],
+      "systemPrompt": "Ти технічний письменник. Готуй MD-документацію, README та інструкції.",
+      "cron": ""
+    },
+    {
+      "id": "agent-8",
+      "name": "Finalizer Agent",
+      "role": "Фінальна збірка результату",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.25,
+      "skills": [
+        "executor",
+        "reviewer",
+        "telegram_notifier"
+      ],
+      "mcps": [
+        "filesystem",
+        "telegram"
+      ],
+      "systemPrompt": "Ти фіналізатор. Обʼєднай outputs попередніх агентів у готовий результат.",
+      "cron": ""
+    },
+    {
+      "id": "agent-9",
+      "name": "Email Assistant Agent",
+      "role": "Робота з поштою, drafts, replies, follow-ups",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.25,
+      "skills": [
+        "email_reader",
+        "email_sender",
+        "writer"
+      ],
+      "mcps": [
+        "gmail",
+        "smtp"
+      ],
+      "systemPrompt": "Ти поштовий агент. Готуй короткі, точні листи, витягуй action items і не надсилай без явної команди.",
+      "cron": ""
+    },
+    {
+      "id": "agent-10",
+      "name": "API Integration Agent",
+      "role": "Інтеграція із зовнішніми API",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "api_connector",
+        "webhook",
+        "database_query"
+      ],
+      "mcps": [
+        "http",
+        "database"
+      ],
+      "systemPrompt": "Ти агент інтеграцій. Проєктуй безпечні API-виклики, retries, auth, logs і idempotency.",
+      "cron": ""
+    },
+    {
+      "id": "agent-11",
+      "name": "CRM Sales Agent",
+      "role": "CRM, ліди, follow-up задачі",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.35,
+      "skills": [
+        "crm_updater",
+        "email_sender",
+        "telegram_notifier"
+      ],
+      "mcps": [
+        "crm",
+        "smtp",
+        "telegram"
+      ],
+      "systemPrompt": "Ти CRM-агент. Оновлюй статуси, формуй follow-up і короткі sales notes.",
+      "cron": ""
+    },
+    {
+      "id": "agent-12",
+      "name": "Code Audit Agent",
+      "role": "Глибокий аудит коду",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "reviewer",
+        "security",
+        "tester",
+        "github_operator"
+      ],
+      "mcps": [
+        "github",
+        "database"
+      ],
+      "systemPrompt": "Ти аудитор коду. Дай структурований звіт: критичні, середні, низькі проблеми.",
+      "cron": ""
+    },
+    {
+      "id": "requirements-analyst",
+      "name": "Requirements Analyst",
+      "role": "Turns the user task into clear requirements and acceptance criteria.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "research",
+        "planner",
+        "product",
+        "summary"
+      ],
+      "mcps": [],
+      "systemPrompt": "You are a requirements analyst. Extract goals, constraints, inputs, outputs, risks, and acceptance criteria. Keep the result concrete and executable."
+    },
+    {
+      "id": "project-scanner",
+      "name": "Project Scanner",
+      "role": "Reads the project folder and builds a map of files, technologies, and likely entry points.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "folder_scan",
+        "file_read",
+        "git_status",
+        "docs"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "git-mcp"
+      ],
+      "systemPrompt": "You inspect a local project. Summarize structure, stack, important files, scripts, risks, and where changes should be made. Never modify files unless explicitly requested."
+    },
+    {
+      "id": "developer-agent",
+      "name": "Developer Agent",
+      "role": "Implements backend/frontend changes, produces patches, and explains code decisions.",
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "skills": [
+        "developer",
+        "file_read",
+        "file_write",
+        "folder_scan",
+        "git_status",
+        "git_patch",
+        "codebase_map",
+        "dependency_audit",
+        "code_generation",
+        "patch_writer",
+        "test_runner",
+        "shell_safe",
+        "api_http",
+        "docs"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "git-mcp",
+        "github-mcp",
+        "terminal-mcp",
+        "memory-mcp"
+      ],
+      "systemPrompt": "You are a senior full-stack developer. Read the workspace tree and git context first. Identify exact files to change. Produce complete code blocks or patch-style changes. When asked to implement, generate concrete file artifacts under agent-flow-output and explain how to apply them. Keep dependencies minimal and prefer safe incremental changes."
+    },
+    {
+      "id": "backend-engineer",
+      "name": "Backend Engineer",
+      "role": "Designs APIs, workers, cron, integrations, storage, and execution logic.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.15,
+      "skills": [
+        "developer",
+        "api_http",
+        "database",
+        "security",
+        "docs"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "postgres-mcp"
+      ],
+      "systemPrompt": "You build reliable backend services: APIs, workers, queues, cron, validation, persistence, and logs. Return concrete endpoints and data contracts."
+    },
+    {
+      "id": "frontend-engineer",
+      "name": "Frontend Engineer",
+      "role": "Builds UI screens, state, drag-and-drop UX, dark mode, and flow editors.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "developer",
+        "qa",
+        "docs"
+      ],
+      "mcps": [
+        "filesystem-mcp"
+      ],
+      "systemPrompt": "You build clean React UI with simple state management, accessible forms, and clear user flows. Return full components when needed."
+    },
+    {
+      "id": "api-integrator",
+      "name": "API Integrator",
+      "role": "Connects external APIs: email, CRM, GitHub, Telegram, calendar, webhooks.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "api_http",
+        "email_read",
+        "email_send",
+        "github",
+        "telegram",
+        "crm",
+        "calendar",
+        "webhook"
+      ],
+      "mcps": [
+        "gmail-mcp",
+        "github-mcp",
+        "slack-mcp"
+      ],
+      "systemPrompt": "You design and execute safe API integrations. Specify auth, endpoints, payloads, retries, idempotency, and error handling."
+    },
+    {
+      "id": "qa-agent",
+      "name": "QA Agent",
+      "role": "Checks the result, writes test scenarios, finds regressions.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "qa",
+        "code_review",
+        "security",
+        "summary"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "git-mcp"
+      ],
+      "systemPrompt": "You are a QA engineer. Verify output against requirements, list bugs, missing cases, tests, and release blockers."
+    },
+    {
+      "id": "security-reviewer",
+      "name": "Security Reviewer",
+      "role": "Reviews secrets, filesystem operations, shell commands, auth, and unsafe integrations.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "security",
+        "code_review",
+        "git_status"
+      ],
+      "mcps": [
+        "git-mcp"
+      ],
+      "systemPrompt": "You are a security reviewer. Look for unsafe commands, path traversal, secrets, auth bypasses, excessive permissions, and data leaks."
+    },
+    {
+      "id": "docs-writer",
+      "name": "Documentation Writer",
+      "role": "Writes README, installation guide, usage guide, and final report.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.25,
+      "skills": [
+        "docs",
+        "summary"
+      ],
+      "mcps": [
+        "filesystem-mcp"
+      ],
+      "systemPrompt": "You write clear technical documentation in Markdown. Include install, configuration, usage, examples, troubleshooting, and next steps."
+    },
+    {
+      "id": "final-assembler",
+      "name": "Final Assembler",
+      "role": "Combines all previous outputs into a final deliverable.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "summary",
+        "docs",
+        "product"
+      ],
+      "mcps": [],
+      "systemPrompt": "You combine pipeline outputs into one clean final answer with decisions, files changed, remaining risks, and instructions."
+    },
+    {
+      "id": "team-lead-agent",
+      "name": "Team Lead Agent",
+      "role": "Coordinates agent team work, decides execution order, resolves conflicts, and prepares delegation notes.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "planner",
+        "pm",
+        "product",
+        "summary",
+        "reviewer"
+      ],
+      "mcps": [],
+      "systemPrompt": "You are a technical team lead. Coordinate a multi-agent team, split work into clear responsibilities, remove ambiguity, and keep the output practical."
+    },
+    {
+      "id": "devops-agent",
+      "name": "DevOps Agent",
+      "role": "Reviews install scripts, env configuration, CI/CD, Docker, runtime and deployment risks.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.15,
+      "skills": [
+        "developer",
+        "git_status",
+        "security",
+        "docs",
+        "api_http"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "git-mcp"
+      ],
+      "systemPrompt": "You are a DevOps engineer. Improve installation, environment setup, scripts, deployment safety, CI/CD, logs, and operational reliability."
+    },
+    {
+      "id": "release-manager-agent",
+      "name": "Release Manager Agent",
+      "role": "Prepares changelog, release notes, versioning, QA checklist and delivery summary.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "docs",
+        "summary",
+        "qa",
+        "calendar_scheduler"
+      ],
+      "mcps": [
+        "filesystem-mcp"
+      ],
+      "systemPrompt": "You are a release manager. Prepare a clean release package: changelog, test checklist, known risks, rollback notes, and user-facing instructions."
+    },
+    {
+      "id": "data-analyst-agent",
+      "name": "Data Analyst Agent",
+      "role": "Analyzes JSON, CSV, logs, metrics, database outputs and turns them into decisions.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "database",
+        "database_query",
+        "file_read",
+        "summary",
+        "research"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "database",
+        "postgres-mcp"
+      ],
+      "systemPrompt": "You are a data analyst. Read structured data, logs, JSON/CSV/database context and produce concise findings, metrics, risks, and next actions."
+    }
+  ],
+  "skills": [
+    {
+      "id": "research",
+      "name": "Research Analyst",
+      "type": "llm",
+      "description": "Збирає контекст, факти, вимоги та джерела.",
+      "prompt": "Проаналізуй задачу, виділи факти, ризики, невідомі та вхідні дані."
+    },
+    {
+      "id": "planner",
+      "name": "Strategic Planner",
+      "type": "llm",
+      "description": "Розбиває задачу на етапи та залежності.",
+      "prompt": "Побудуй покроковий план виконання з пріоритетами і залежностями."
+    },
+    {
+      "id": "architect",
+      "name": "System Architect",
+      "type": "llm",
+      "description": "Проєктує структуру рішення, модулі, дані й інтеграції.",
+      "prompt": "Сформуй архітектуру, модулі, межі відповідальності і формат даних."
+    },
+    {
+      "id": "coder",
+      "name": "Code Builder",
+      "type": "llm",
+      "description": "Генерує або покращує код.",
+      "prompt": "Реалізуй рішення чистим, підтримуваним кодом без зайвої магії."
+    },
+    {
+      "id": "reviewer",
+      "name": "Code Reviewer",
+      "type": "llm",
+      "description": "Шукає баги, слабкі місця, edge cases.",
+      "prompt": "Перевір результат критично: баги, безпека, продуктивність, підтримка."
+    },
+    {
+      "id": "tester",
+      "name": "QA Tester",
+      "type": "llm",
+      "description": "Формує сценарії перевірки та acceptance criteria.",
+      "prompt": "Створи тест-кейси, очікувані результати та критерії готовності."
+    },
+    {
+      "id": "security",
+      "name": "Security Auditor",
+      "type": "llm",
+      "description": "Перевіряє ризики безпеки, доступи, секрети, інʼєкції.",
+      "prompt": "Оціни безпеку: auth, permissions, secrets, injections, data leakage."
+    },
+    {
+      "id": "writer",
+      "name": "Technical Writer",
+      "type": "llm",
+      "description": "Готує README, документацію, інструкції.",
+      "prompt": "Опиши результат зрозуміло: як запустити, як користуватись, як підтримувати."
+    },
+    {
+      "id": "pm",
+      "name": "Product Manager",
+      "type": "llm",
+      "description": "Формує цінність, scope, MVP, roadmap.",
+      "prompt": "Виділи бізнес-цінність, MVP, обмеження, backlog і наступні кроки."
+    },
+    {
+      "id": "executor",
+      "name": "Task Executor",
+      "type": "llm",
+      "description": "Виконує практичні кроки та збирає фінальний результат.",
+      "prompt": "Зведи попередні результати в готовий практичний output."
+    },
+    {
+      "id": "email_reader",
+      "name": "Email Reader",
+      "type": "api",
+      "description": "Підготовка поштових запитів, фільтрів, summary inbox.",
+      "prompt": "Сформуй точний email-search план: sender, subject, date, labels, next action."
+    },
+    {
+      "id": "email_sender",
+      "name": "Email Sender",
+      "type": "api",
+      "description": "Готує або надсилає email через SMTP/API.",
+      "prompt": "Підготуй лист: subject, recipients, body, tone, call-to-action."
+    },
+    {
+      "id": "api_connector",
+      "name": "External API Connector",
+      "type": "api",
+      "description": "HTTP API інтеграції, headers, auth, payload, retry.",
+      "prompt": "Опиши API-виклик: method, url, headers, payload, retries, error handling."
+    },
+    {
+      "id": "webhook",
+      "name": "Webhook Handler",
+      "type": "api",
+      "description": "Прийом і маршрутизація webhook events.",
+      "prompt": "Розбери event, визнач тип, payload, idempotency key і наступну дію."
+    },
+    {
+      "id": "database_query",
+      "name": "Database Query",
+      "type": "api",
+      "description": "SQL/NoSQL запити, схеми, міграції, агрегації.",
+      "prompt": "Сформуй безпечний запит, поясни таблиці, індекси і ризики."
+    },
+    {
+      "id": "file_manager",
+      "name": "File Manager",
+      "type": "api",
+      "description": "Робота з файлами, JSON, Markdown, експортами.",
+      "prompt": "Підготуй структуру файлів, назви, формат і контент."
+    },
+    {
+      "id": "calendar_scheduler",
+      "name": "Calendar Scheduler",
+      "type": "api",
+      "description": "Події, дедлайни, календарні правила.",
+      "prompt": "Підготуй календарний план, RRULE або cron, дедлайни і reminders."
+    },
+    {
+      "id": "crm_updater",
+      "name": "CRM Updater",
+      "type": "api",
+      "description": "Оновлення лідів, deals, notes, tasks у CRM.",
+      "prompt": "Визнач CRM-сутність, поля, статус, коментар і next follow-up."
+    },
+    {
+      "id": "github_operator",
+      "name": "GitHub Operator",
+      "type": "api",
+      "description": "Issues, PR, branches, code review, release notes.",
+      "prompt": "Підготуй GitHub-дію: issue/PR/branch/release, title, body, labels."
+    },
+    {
+      "id": "telegram_notifier",
+      "name": "Telegram Notifier",
+      "type": "api",
+      "description": "Повідомлення у Telegram/чат-канали.",
+      "prompt": "Стисни результат у коротке повідомлення з пріоритетом і дією."
+    },
+    {
+      "id": "developer",
+      "name": "Developer",
+      "category": "engineering",
+      "description": "Reads project files, proposes code changes, writes patches, and explains implementation."
+    },
+    {
+      "id": "code_review",
+      "name": "Code Review",
+      "category": "engineering",
+      "description": "Reviews code for bugs, architecture issues, security, and maintainability."
+    },
+    {
+      "id": "file_read",
+      "name": "File Read",
+      "category": "filesystem",
+      "description": "Reads files from a configured workspace folder."
+    },
+    {
+      "id": "file_write",
+      "name": "File Write",
+      "category": "filesystem",
+      "description": "Writes generated output files into the workspace."
+    },
+    {
+      "id": "folder_scan",
+      "name": "Folder Scan",
+      "category": "filesystem",
+      "description": "Scans folder tree and summarizes project structure."
+    },
+    {
+      "id": "git_status",
+      "name": "Git Status",
+      "category": "git",
+      "description": "Runs safe git status/log/diff commands in the workspace."
+    },
+    {
+      "id": "git_patch",
+      "name": "Git Patch",
+      "category": "git",
+      "description": "Prepares patch-style output for applying changes manually or with a worker."
+    },
+    {
+      "id": "api_http",
+      "name": "HTTP API",
+      "category": "integration",
+      "description": "Calls external APIs with method, headers, and JSON body."
+    },
+    {
+      "id": "email_read",
+      "name": "Email Read",
+      "category": "email",
+      "description": "Plans email reading/searching via SMTP/IMAP or provider API connector."
+    },
+    {
+      "id": "email_send",
+      "name": "Email Send",
+      "category": "email",
+      "description": "Sends email via SMTP when configured."
+    },
+    {
+      "id": "mcp_client",
+      "name": "MCP Client",
+      "category": "mcp",
+      "description": "Describes how an agent should use attached MCP servers/tools."
+    },
+    {
+      "id": "database",
+      "name": "Database",
+      "category": "data",
+      "description": "Plans SQL queries and database checks; execution should be attached explicitly."
+    },
+    {
+      "id": "qa",
+      "name": "QA",
+      "category": "quality",
+      "description": "Creates test cases, checks edge cases, and verifies done criteria."
+    },
+    {
+      "id": "docs",
+      "name": "Documentation",
+      "category": "writing",
+      "description": "Writes README, changelog, API docs, and technical notes."
+    },
+    {
+      "id": "product",
+      "name": "Product Owner",
+      "category": "product",
+      "description": "Clarifies user value, scope, priorities, and release slicing."
+    },
+    {
+      "id": "summary",
+      "name": "Final Summary",
+      "category": "writing",
+      "description": "Combines all previous outputs into a clean final result."
+    },
+    {
+      "id": "telegram",
+      "name": "Telegram API",
+      "category": "integration",
+      "description": "Prepares Telegram bot/API actions."
+    },
+    {
+      "id": "github",
+      "name": "GitHub API",
+      "category": "integration",
+      "description": "Plans GitHub issues, PRs, comments, and repository API usage."
+    },
+    {
+      "id": "crm",
+      "name": "CRM API",
+      "category": "integration",
+      "description": "Prepares CRM actions: leads, deals, contacts, tasks."
+    },
+    {
+      "id": "calendar",
+      "name": "Calendar API",
+      "category": "integration",
+      "description": "Prepares calendar events, reminders, and schedule checks."
+    },
+    {
+      "id": "shell_command_plan",
+      "name": "Shell Command Plan",
+      "category": "devops",
+      "description": "Prepares safe shell commands for manual execution, without running destructive commands automatically.",
+      "prompt": "Prepare safe terminal commands, explain each command and risks."
+    },
+    {
+      "id": "dependency_audit",
+      "name": "Dependency Audit",
+      "category": "engineering",
+      "description": "Reviews package dependencies, install speed, native modules, version pinning and lockfile risks.",
+      "prompt": "Audit dependencies for installation speed, stability, native modules and version conflicts."
+    },
+    {
+      "id": "ci_cd",
+      "name": "CI/CD",
+      "category": "devops",
+      "description": "Designs GitHub Actions or other CI/CD checks and release workflows.",
+      "prompt": "Prepare CI/CD workflow: install, lint, test, build, release."
+    },
+    {
+      "id": "log_analysis",
+      "name": "Log Analysis",
+      "category": "analysis",
+      "description": "Reads logs and extracts root causes, errors, timelines and next actions.",
+      "prompt": "Analyze logs, identify root cause and propose exact fix steps."
+    },
+    {
+      "id": "patch_apply_plan",
+      "name": "Patch Apply Plan",
+      "category": "git",
+      "description": "Creates patch application instructions and safety checks before write operations.",
+      "prompt": "Prepare patch instructions, files changed and rollback notes."
+    },
+    {
+      "id": "codebase_map",
+      "name": "Codebase Map",
+      "category": "engineering",
+      "description": "Builds a precise map of source folders, entry points, configs, scripts and module boundaries."
+    },
+    {
+      "id": "code_generation",
+      "name": "Code Generation",
+      "category": "engineering",
+      "description": "Produces complete files, components, services, routes and small working implementations."
+    },
+    {
+      "id": "patch_writer",
+      "name": "Patch Writer",
+      "category": "engineering",
+      "description": "Produces exact file-level patches and implementation notes that can be applied to a workspace."
+    },
+    {
+      "id": "test_runner",
+      "name": "Test Runner",
+      "category": "quality",
+      "description": "Plans safe test commands, verifies expected output and reports failures."
+    },
+    {
+      "id": "shell_safe",
+      "name": "Safe Shell",
+      "category": "automation",
+      "description": "Plans allowlisted shell commands for install/build/test/git operations with human approval."
+    },
+    {
+      "id": "docker_ops",
+      "name": "Docker Ops",
+      "category": "devops",
+      "description": "Prepares Dockerfile, compose, container commands, volumes, env and logs."
+    },
+    {
+      "id": "observability",
+      "name": "Observability",
+      "category": "devops",
+      "description": "Adds logging, metrics, tracing, health checks and run diagnostics."
+    },
+    {
+      "id": "vector_memory",
+      "name": "Vector Memory",
+      "category": "ai",
+      "description": "Plans retrieval memory for project notes, docs, decisions and agent context."
+    },
+    {
+      "id": "rag_search",
+      "name": "RAG Search",
+      "category": "ai",
+      "description": "Searches project/document context and injects relevant chunks into the agent task."
+    },
+    {
+      "id": "browser_automation",
+      "name": "Browser Automation",
+      "category": "automation",
+      "description": "Plans browser navigation, extraction, screenshots and form automation through an MCP/browser tool."
+    }
+  ],
+  "mcps": [
+    {
+      "id": "filesystem",
+      "name": "Filesystem MCP",
+      "description": "Робота з файлами, MD, JSON, експортами."
+    },
+    {
+      "id": "browser",
+      "name": "Browser MCP",
+      "description": "Пошук, відкриття сторінок, збір веб-контексту."
+    },
+    {
+      "id": "github",
+      "name": "GitHub MCP",
+      "description": "Репозиторії, pull requests, issues, code search."
+    },
+    {
+      "id": "database",
+      "name": "Database MCP",
+      "description": "SQL-запити, схеми, міграції, аналіз таблиць."
+    },
+    {
+      "id": "calendar",
+      "name": "Calendar MCP",
+      "description": "Події, cron-плани, календарні задачі."
+    },
+    {
+      "id": "gmail",
+      "name": "Gmail MCP",
+      "description": "Пошук листів, drafts, replies, labels."
+    },
+    {
+      "id": "smtp",
+      "name": "SMTP MCP",
+      "description": "Надсилання email через SMTP."
+    },
+    {
+      "id": "http",
+      "name": "HTTP API MCP",
+      "description": "Виклики зовнішніх REST API."
+    },
+    {
+      "id": "telegram",
+      "name": "Telegram MCP",
+      "description": "Повідомлення у Telegram bot/channel."
+    },
+    {
+      "id": "crm",
+      "name": "CRM MCP",
+      "description": "Deals, leads, contacts, tasks."
+    },
+    {
+      "id": "filesystem-mcp",
+      "name": "Filesystem MCP",
+      "endpoint": "stdio://filesystem",
+      "description": "File and folder tools for local projects."
+    },
+    {
+      "id": "git-mcp",
+      "name": "Git MCP",
+      "endpoint": "stdio://git",
+      "description": "Repository status, diff, commits, branches."
+    },
+    {
+      "id": "github-mcp",
+      "name": "GitHub MCP",
+      "endpoint": "https://api.github.com",
+      "description": "Issues, PRs, repository metadata."
+    },
+    {
+      "id": "postgres-mcp",
+      "name": "PostgreSQL MCP",
+      "endpoint": "stdio://postgres",
+      "description": "SQL read/query tools."
+    },
+    {
+      "id": "gmail-mcp",
+      "name": "Gmail MCP",
+      "endpoint": "provider://gmail",
+      "description": "Email search, read, draft, send."
+    },
+    {
+      "id": "slack-mcp",
+      "name": "Slack MCP",
+      "endpoint": "provider://slack",
+      "description": "Channels, messages, threads."
+    },
+    {
+      "id": "web-browser-mcp",
+      "name": "Browser MCP",
+      "endpoint": "stdio://browser",
+      "description": "Browser automation and page extraction."
+    },
+    {
+      "id": "shell-mcp",
+      "name": "Shell MCP",
+      "endpoint": "stdio://shell",
+      "description": "Safe command planning and approved command execution."
+    },
+    {
+      "id": "docker-mcp",
+      "name": "Docker MCP",
+      "endpoint": "stdio://docker",
+      "description": "Docker image, container and compose inspection."
+    },
+    {
+      "id": "ci-mcp",
+      "name": "CI/CD MCP",
+      "endpoint": "provider://github-actions",
+      "description": "CI runs, workflow files and release automation metadata."
+    },
+    {
+      "id": "playwright-mcp",
+      "name": "Playwright Browser MCP",
+      "endpoint": "stdio://playwright",
+      "description": "Modern browser automation, screenshots, DOM inspection and UI workflow testing."
+    },
+    {
+      "id": "terminal-mcp",
+      "name": "Safe Terminal MCP",
+      "endpoint": "stdio://terminal-allowlist",
+      "description": "Allowlisted terminal commands with approval before destructive actions."
+    },
+    {
+      "id": "memory-mcp",
+      "name": "Memory/RAG MCP",
+      "endpoint": "stdio://memory",
+      "description": "Project memory, vector search, long-term notes and reusable decisions."
+    },
+    {
+      "id": "linear-mcp",
+      "name": "Linear/Jira MCP",
+      "endpoint": "provider://issues",
+      "description": "Issues, tasks, backlog, statuses, labels and sprint planning."
+    },
+    {
+      "id": "supabase-mcp",
+      "name": "Supabase MCP",
+      "endpoint": "provider://supabase",
+      "description": "Postgres, auth, storage and edge functions."
+    },
+    {
+      "id": "vercel-mcp",
+      "name": "Vercel MCP",
+      "endpoint": "provider://vercel",
+      "description": "Deployments, projects, env variables, preview URLs and logs."
+    }
+  ],
+  "flows": [
+    {
+      "id": "9ed5380c-2661-49de-8df6-2a00517c13cc",
+      "name": "Full Project Team: analyze → implement → QA → docs",
+      "task": "Analyze the provided project folder, identify problems, propose changes, implement or prepare patch instructions, review quality/security, and prepare final documentation.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "",
+      "steps": [
+        {
+          "id": "59d6f0dd-9b82-4c47-a60e-aa05abdd4eeb",
+          "agentId": "requirements-analyst",
+          "note": "Extract exact goal, constraints, expected deliverable and acceptance criteria.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "58201d18-ba3a-4c44-bc1d-54f18e64f300",
+          "agentId": "project-scanner",
+          "note": "Scan the project tree and identify stack, entry points, package/dependency risks and important files.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "a53ab215-c40e-4d53-ac92-c2555189dab7",
+          "agentId": "team-lead-agent",
+          "note": "Delegate work between developer, QA, security and docs agents.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "6b64fe73-9459-4510-ae36-1668b39aad62",
+          "agentId": "developer-agent",
+          "note": "Prepare exact file changes or patch-style implementation. Keep dependencies minimal.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "8d178445-b1ac-46be-9b75-0a7d7128877e",
+          "agentId": "qa-agent",
+          "note": "Verify the proposed implementation against acceptance criteria and list test cases.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "2e0a3015-ddc1-4123-921f-56d55e1c7edf",
+          "agentId": "security-reviewer",
+          "note": "Review filesystem, git, env and API actions for safety issues.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "b6272d27-14c6-4228-af43-aafd6be6c0d5",
+          "agentId": "docs-writer",
+          "note": "Update README/install/use instructions in English.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "2110897c-9bcc-4c6b-aa38-6fe4a8a79907",
+          "agentId": "final-assembler",
+          "note": "Combine all previous outputs into one final delivery summary.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "f3be77db-bc7f-4d83-b6ef-3126059ad322",
+      "name": "Software Delivery Squad",
+      "task": "Take a software task from idea to delivery: requirements, architecture, frontend/backend implementation, QA, security and release notes.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "",
+      "steps": [
+        {
+          "id": "c28fc94e-2361-48c6-9b61-15f623d7fc20",
+          "agentId": "agent-1",
+          "note": "Collect context and unknowns.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "3be91487-27fa-4310-891e-91f38938482b",
+          "agentId": "agent-2",
+          "note": "Create execution plan and dependencies.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "8a132c86-2349-4df6-94f2-f5c1abcb6314",
+          "agentId": "agent-3",
+          "note": "Design architecture, modules and data contracts.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "7ca9c85c-d349-47b7-9fa6-6d2139dbbb05",
+          "agentId": "backend-engineer",
+          "note": "Define or implement backend endpoints and persistence.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "60f02869-5d57-4260-85bc-484b8654e795",
+          "agentId": "frontend-engineer",
+          "note": "Define or implement UI changes and UX details.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "b6c964f1-a58e-4811-bde5-838015787c56",
+          "agentId": "agent-12",
+          "note": "Run code audit with critical/medium/low findings.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "eb65dad5-636d-41c5-88cd-0494b2757350",
+          "agentId": "agent-5",
+          "note": "Prepare QA cases and acceptance criteria.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "5d28d387-e1e1-4ed9-83df-cf32d1a4c67e",
+          "agentId": "release-manager-agent",
+          "note": "Prepare release checklist and changelog.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "93390344-7980-4f44-ae50-69408d847cda",
+          "agentId": "agent-8",
+          "note": "Finalize result and notification summary.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "c0f47e4e-0510-497b-a4f1-bc04b74e8767",
+      "name": "API + Email Automation Team",
+      "task": "Design an automation that reads or prepares email actions, connects external APIs, stores results and notifies stakeholders.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "0 9 * * 1-5",
+      "steps": [
+        {
+          "id": "ff30416e-6baa-4762-a29f-38931bbe5f44",
+          "agentId": "requirements-analyst",
+          "note": "Clarify triggers, data sources, recipients and approval rules.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "9858dd19-1fa6-49df-8bc5-c87f0116ead8",
+          "agentId": "agent-9",
+          "note": "Prepare email read/draft/send workflow. Do not send without explicit approval.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "53b95323-8524-4186-ac51-2a9a6b51d4e9",
+          "agentId": "api-integrator",
+          "note": "Design API/webhook calls with auth, retries, logs and idempotency.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "bf82fae8-9c95-40b9-a5e5-0d5ca16844ae",
+          "agentId": "agent-10",
+          "note": "Prepare concrete endpoint contracts and database touchpoints.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "332b7638-0b53-4436-b7af-da1801cc68a9",
+          "agentId": "security-reviewer",
+          "note": "Check secrets, permissions and accidental data leakage.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "4d067d7b-bb64-4661-a1c6-dcb2cc9cdf4c",
+          "agentId": "docs-writer",
+          "note": "Document setup, env variables and usage example.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "d64490ce-5442-41d1-9eb9-364cf234cf0a",
+          "agentId": "final-assembler",
+          "note": "Prepare final automation plan and next steps.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "e6a83317-9bb5-4b9b-ae5e-96255fff71ff",
+      "name": "Install & Dependency Fix Flow",
+      "task": "Find why installation is slow or failing, simplify dependencies, update scripts, and prepare README troubleshooting.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "",
+      "steps": [
+        {
+          "id": "c9201bd6-abab-4b0a-8dd1-df805e5f6367",
+          "agentId": "project-scanner",
+          "note": "Inspect package files, scripts and folder structure.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "06a93f96-b521-4fb5-a711-fddd1d12ed04",
+          "agentId": "devops-agent",
+          "note": "Audit Node/npm versions, package manager config and install risks.",
+          "cron": "",
+          "loops": 2,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "b6662044-a135-42c0-a289-1557de88d72b",
+          "agentId": "developer-agent",
+          "note": "Propose minimal dependency changes and script updates.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "47ded8ad-9a38-4195-9fdc-83fe4529a588",
+          "agentId": "qa-agent",
+          "note": "List verification commands for install, dev, build and API health.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "aba063a4-0f8c-45df-80da-c570f01cbc18",
+          "agentId": "docs-writer",
+          "note": "Write English install and troubleshooting documentation.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "667eeefe-6fda-44fd-8660-8f746c8b1d28",
+          "agentId": "release-manager-agent",
+          "note": "Prepare version note and rollback plan.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "d067536e-5f58-40d6-a69f-1d57b15f4c5b",
+      "name": "CRM Sales Follow-up Team",
+      "task": "Process leads, prepare CRM updates, draft follow-up emails and send a concise Telegram summary.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "0 10 * * 1-5",
+      "steps": [
+        {
+          "id": "353a2c37-d116-4c2c-98ab-0ac8450ef129",
+          "agentId": "agent-1",
+          "note": "Collect lead context and missing fields.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "89d11cb8-c984-49fa-8ccf-ec2438b25aa9",
+          "agentId": "agent-11",
+          "note": "Prepare CRM status, notes and next follow-up.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "ad7bcbec-b186-4fa5-8e94-f84d6efadd58",
+          "agentId": "agent-9",
+          "note": "Draft email response/follow-up. Do not send without approval.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "b96edb30-cc03-4b15-8029-24d5429522c1",
+          "agentId": "api-integrator",
+          "note": "Prepare API actions for CRM/email/Telegram connectors.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "235a2d34-fac8-44ea-aa30-c7b147be7e71",
+          "agentId": "agent-8",
+          "note": "Finalize concise action summary.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "61fc9174-92cb-4107-8c6b-53168dd8312b",
+      "name": "Imported: Main autonomous chain",
+      "task": "Створи повний план запуску нового продукту від ідеї до релізу.",
+      "loops": 1,
+      "cron": "",
+      "steps": [
+        {
+          "id": "712ecfcf-3cb5-49a1-971f-3a795c184e3b",
+          "agentId": "agent-2",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "27484b03-3cc7-453a-b56d-6dbedbd01c6c",
+          "agentId": "agent-7",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "ccbb43a8-2e92-4b61-b1dd-b62be00b6641",
+      "name": "Imported: Main autonomous chain",
+      "task": "Створи повний план запуску нового продукту від ідеї до релізу.",
+      "loops": 1,
+      "cron": "",
+      "steps": [
+        {
+          "id": "712ecfcf-3cb5-49a1-971f-3a795c184e3b",
+          "agentId": "agent-2",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "27484b03-3cc7-453a-b56d-6dbedbd01c6c",
+          "agentId": "agent-7",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "044583ef-6395-43ae-9ea5-d5a637405c8a",
+          "agentId": "agent-3",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "2512cf1a-18f9-4178-993d-5e7b4f4298e8",
+          "agentId": "agent-12",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "00068632-2afa-4463-8863-e5a105997007",
+          "agentId": "agent-5",
+          "note": "",
+          "cron": "",
+          "dependsOnPrevious": true
+        }
+      ]
+    },
+    {
+      "id": "top-level-autonomous-dev-loop",
+      "name": "Top-level autonomous developer team loop",
+      "task": "Given a local project folder and a user task, scan the project, define requirements, implement exact file changes, review them, test them, document them, and summarize final artifacts.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "",
+      "loopGroups": [
+        {
+          "id": "dev-qa-loop-visible",
+          "name": "Developer ↔ QA improvement loop",
+          "start": 3,
+          "end": 4,
+          "loops": 3
+        },
+        {
+          "id": "review-hardening-loop",
+          "name": "Security hardening loop",
+          "start": 3,
+          "end": 5,
+          "loops": 2
+        }
+      ],
+      "steps": [
+        {
+          "id": "tdl-1",
+          "agentId": "requirements-analyst",
+          "note": "Extract exact deliverable and acceptance criteria from the user task.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-2",
+          "agentId": "project-scanner",
+          "note": "Scan the workspace and identify files that must be changed.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-3",
+          "agentId": "architecture-agent",
+          "note": "Design the minimal architecture and data flow before implementation.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-4",
+          "agentId": "developer-agent",
+          "note": "Implement exact file changes. Produce full files or patch blocks. Do not stay abstract.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-5",
+          "agentId": "qa-agent",
+          "note": "Check the implementation and return concrete defects or approval.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-6",
+          "agentId": "security-reviewer",
+          "note": "Review unsafe file, git, shell, env and API operations.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-7",
+          "agentId": "docs-writer",
+          "note": "Write English README/update notes for installation and usage.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "tdl-8",
+          "agentId": "final-assembler",
+          "note": "Return final result with generated artifacts and next commands.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    }
+  ]
+}

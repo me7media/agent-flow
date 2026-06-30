@@ -1,0 +1,20 @@
+{
+  "name": "agent-flow-py",
+  "version": "0.5.0-py",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "client": "vite --host 0.0.0.0",
+    "server": ".venv/bin/python run.py",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "vite": "5.4.11",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {}
+}
+

@@ -1,0 +1,283 @@
+{
+  "agents": [
+    {
+      "id": "autonomous-developer-v2",
+      "name": "Autonomous Developer v2",
+      "role": "Scans a project, chooses exact files, writes patch-ready implementation and generated artifacts.",
+      "model": "gpt-4.1",
+      "temperature": 0.12,
+      "skills": [
+        "developer",
+        "repo_indexer",
+        "semantic_code_search",
+        "file_read",
+        "file_write",
+        "patch_writer",
+        "git_status",
+        "test_runner_plan",
+        "lint_fix_plan",
+        "docs"
+      ],
+      "mcps": [
+        "filesystem-mcp",
+        "filesystem-write-mcp",
+        "git-mcp",
+        "terminal-mcp"
+      ],
+      "systemPrompt": "You are an autonomous senior developer. Always produce exact file paths, patch blocks, generated files and validation commands. Avoid generic advice."
+    },
+    {
+      "id": "tech-lead-reviewer",
+      "name": "Tech Lead Reviewer",
+      "role": "Reviews architecture, implementation scope, maintainability and release risk.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.1,
+      "skills": [
+        "code_review",
+        "architect",
+        "security",
+        "ci_pipeline",
+        "release_manager"
+      ],
+      "mcps": [
+        "git-mcp",
+        "github-mcp"
+      ],
+      "systemPrompt": "You are a pragmatic tech lead. Accept or reject a change with concrete blocking issues and next actions."
+    },
+    {
+      "id": "devops-ci-agent",
+      "name": "DevOps CI Agent",
+      "role": "Prepares Docker, CI/CD, env and release automation for the project.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.15,
+      "skills": [
+        "docker_compose",
+        "ci_pipeline",
+        "terminal_plan",
+        "release_manager",
+        "docs"
+      ],
+      "mcps": [
+        "docker-mcp",
+        "terminal-mcp",
+        "github-mcp"
+      ],
+      "systemPrompt": "You are a DevOps engineer. Prefer simple local commands, reproducible CI and safe deployment steps."
+    },
+    {
+      "id": "memory-context-agent",
+      "name": "Memory Context Agent",
+      "role": "Builds persistent project notes, decisions, conventions and reusable context.",
+      "model": "gpt-4.1-mini",
+      "temperature": 0.2,
+      "skills": [
+        "rag_memory",
+        "summary",
+        "docs",
+        "repo_indexer"
+      ],
+      "mcps": [
+        "memory-mcp",
+        "filesystem-mcp"
+      ],
+      "systemPrompt": "You maintain project memory. Store concise decisions, conventions, open risks and useful file map notes."
+    }
+  ],
+  "skills": [
+    {
+      "id": "repo_indexer",
+      "name": "Repository Indexer",
+      "category": "engineering",
+      "description": "Builds a searchable map of modules, entry points, configs, scripts and risky files."
+    },
+    {
+      "id": "semantic_code_search",
+      "name": "Semantic Code Search",
+      "category": "engineering",
+      "description": "Finds files and symbols related to a task before editing."
+    },
+    {
+      "id": "patch_writer",
+      "name": "Patch Writer",
+      "category": "engineering",
+      "description": "Produces unified diffs and exact file blocks for safe review or direct write mode."
+    },
+    {
+      "id": "test_runner_plan",
+      "name": "Test Runner Plan",
+      "category": "quality",
+      "description": "Plans exact npm/php/python test commands based on detected stack."
+    },
+    {
+      "id": "lint_fix_plan",
+      "name": "Lint/Fix Plan",
+      "category": "quality",
+      "description": "Plans formatter and lint fixes while avoiding broad unrelated changes."
+    },
+    {
+      "id": "terminal_plan",
+      "name": "Safe Terminal Plan",
+      "category": "terminal",
+      "description": "Prepares shell commands but requires human approval before execution."
+    },
+    {
+      "id": "docker_compose",
+      "name": "Docker Compose",
+      "category": "devops",
+      "description": "Reads and designs Docker Compose services, networks and local env setup."
+    },
+    {
+      "id": "ci_pipeline",
+      "name": "CI Pipeline",
+      "category": "devops",
+      "description": "Designs GitHub Actions/GitLab CI steps for build, test, lint and release."
+    },
+    {
+      "id": "rag_memory",
+      "name": "RAG Memory",
+      "category": "memory",
+      "description": "Stores reusable project notes, decisions and architecture context."
+    },
+    {
+      "id": "playwright_e2e",
+      "name": "Playwright E2E",
+      "category": "testing",
+      "description": "Plans browser tests and UI regression scenarios."
+    },
+    {
+      "id": "migration_planner",
+      "name": "Migration Planner",
+      "category": "data",
+      "description": "Plans safe DB migrations, rollbacks and data validation."
+    },
+    {
+      "id": "release_manager",
+      "name": "Release Manager",
+      "category": "release",
+      "description": "Creates release notes, checks git state and prepares deployment checklist."
+    }
+  ],
+  "mcps": [
+    {
+      "id": "terminal-mcp",
+      "name": "Terminal MCP",
+      "endpoint": "stdio://terminal",
+      "description": "Approved shell commands only; intended for local development automation."
+    },
+    {
+      "id": "docker-mcp",
+      "name": "Docker MCP",
+      "endpoint": "stdio://docker",
+      "description": "Docker images, containers and compose diagnostics."
+    },
+    {
+      "id": "playwright-mcp",
+      "name": "Playwright MCP",
+      "endpoint": "stdio://playwright",
+      "description": "Browser automation and UI testing."
+    },
+    {
+      "id": "memory-mcp",
+      "name": "Memory/RAG MCP",
+      "endpoint": "local://memory",
+      "description": "Project memory, vector notes and reusable context."
+    },
+    {
+      "id": "filesystem-write-mcp",
+      "name": "Filesystem Write MCP",
+      "endpoint": "stdio://filesystem-write",
+      "description": "Controlled writes to workspace files with path safety checks."
+    },
+    {
+      "id": "shellcheck-mcp",
+      "name": "ShellCheck MCP",
+      "endpoint": "stdio://shellcheck",
+      "description": "Shell script lint and safety checks."
+    }
+  ],
+  "flows": [
+    {
+      "id": "v2-real-project-workflow",
+      "name": "V2 real project workflow: scan → dev → QA → tech lead → docs",
+      "task": "Use the selected workspace folder, understand the task, create exact implementation artifacts, review them and document the result.",
+      "workspaceRoot": "./workspace",
+      "loops": 1,
+      "cron": "",
+      "loopGroups": [
+        {
+          "id": "v2-dev-qa-loop",
+          "name": "Visible Dev ↔ QA loop",
+          "start": 2,
+          "end": 3,
+          "loops": 3
+        },
+        {
+          "id": "v2-hardening-loop",
+          "name": "Tech Lead hardening loop",
+          "start": 2,
+          "end": 4,
+          "loops": 2
+        }
+      ],
+      "steps": [
+        {
+          "id": "v2-1",
+          "agentId": "requirements-analyst",
+          "note": "Convert the initial request into acceptance criteria and explicit deliverables.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-2",
+          "agentId": "project-scanner",
+          "note": "Build codebase map and identify exact files likely involved.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-3",
+          "agentId": "autonomous-developer-v2",
+          "note": "Create exact implementation artifacts. Write file blocks, patch notes and validation commands.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-4",
+          "agentId": "qa-agent",
+          "note": "Test the implementation plan and return concrete defects or pass criteria.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-5",
+          "agentId": "tech-lead-reviewer",
+          "note": "Review final architecture and release risk.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-6",
+          "agentId": "docs-writer",
+          "note": "Write English usage/update notes and summarize generated files.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        },
+        {
+          "id": "v2-7",
+          "agentId": "final-assembler",
+          "note": "Final answer: files created, commands, risks and next actions.",
+          "cron": "",
+          "loops": 1,
+          "dependsOnPrevious": true
+        }
+      ]
+    }
+  ]
+}
