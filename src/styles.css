@@ -75,7 +75,7 @@ summary { cursor: pointer; font-weight: 700; }
 .saved:last-child { border-bottom: 0; }
 .saved div { flex: 1; }
 .saved b, .saved span, .saved small { display: block; }
-.form { display: grid; gap: 12px; }
+.form { display: grid; gap: 12px; align-content: start; align-self: start; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chips button { padding: 8px 10px; }
 .item { border-bottom: 1px solid var(--line); padding: 12px 0; }
@@ -230,3 +230,11 @@ summary { cursor: pointer; font-weight: 700; }
   .iot-catalog,.iot-diagram{grid-template-columns:1fr}
   .iot-arrow{transform:rotate(90deg);justify-self:center}
 }
+.adapter-grid,.command-grid{display:grid;gap:10px;margin-top:12px}
+.command-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.iot-diagram.compact{min-height:220px}
+.settings-card pre,.iot-mini pre{max-height:220px;overflow:auto;background:color-mix(in srgb,var(--bg) 78%,#000);border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;white-space:pre-wrap}
+
+.agent-builder-grid{align-items:start}
+.agent-builder-form input,.agent-builder-form select{min-height:42px;height:42px}
+.agent-builder-form textarea{min-height:150px}

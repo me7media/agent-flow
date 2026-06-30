@@ -3,19 +3,31 @@ import { buildWorkflowFromPrompt } from './workflowAssistant.js';
 
 const API = 'http://localhost:8787/api';
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+const asJson = async (response) => {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) throw new Error(data.error || data.message || 'IoT request failed');
+  return data;
+};
+const post = (url, body) => fetch(`${API}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(asJson);
 
 export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, setFlow, setMeta, setPage }) {
   const [pipelines, setPipelines] = useState([]);
   const [catalog, setCatalog] = useState({ sources: [], actions: [] });
   const [draftCatalog, setDraftCatalog] = useState({ sources: settings?.iotSources || [], actions: settings?.iotActions || [] });
+  const [adapters, setAdapters] = useState([]);
   const [prompt, setPrompt] = useState('Розпізнати жест з прибудинкової камери й підготувати команду відкрити або закрити ворота з перевіркою безпеки.');
   const [assistantPlan, setAssistantPlan] = useState(null);
   const [view, setView] = useState('cards');
   const [status, setStatus] = useState('');
+  const [sourceResults, setSourceResults] = useState({});
+  const [actionResults, setActionResults] = useState({});
+  const [discoveryDraft, setDiscoveryDraft] = useState({ transport: 'wifi/http', subnet: '', hosts: '127.0.0.1', ports: '80,443,8080,8123' });
+  const [discoveryResult, setDiscoveryResult] = useState(null);
 
   useEffect(() => {
     fetch(`${API}/iot/pipelines`).then(response => response.json()).then(setPipelines).catch(() => setPipelines([]));
     fetch(`${API}/iot/catalog`).then(response => response.json()).then(data => { setCatalog(data); setDraftCatalog(data); }).catch(() => setCatalog({ sources: [], actions: [] }));
+    fetch(`${API}/iot/adapters`).then(response => response.json()).then(data => setAdapters(data.adapters || [])).catch(() => setAdapters([]));
   }, []);
 
   useEffect(() => {
@@ -30,11 +42,11 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
     setPage('flow');
   };
   const planWithAssistant = () => {
-    const plan = buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid });
+    const plan = buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true });
     setAssistantPlan(plan);
   };
   const applyAssistantPlan = () => {
-    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid });
+    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true });
     setAgents(plan.agents);
     const flow = decorateIoTSteps(plan.steps, settings);
     setMeta({ id: '', name: 'AI IoT pipeline', category: 'iot', task: prompt, workspaceRoot: './workspace', loops: 1, cron: '', steps: flow, loopGroups: plan.loopGroups });
@@ -62,9 +74,9 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
   };
   const updateSource = (id, patch) => setDraftCatalog(current => ({ ...current, sources: (current.sources || []).map(source => source.id === id ? { ...source, ...patch } : source) }));
   const updateAction = (id, patch) => setDraftCatalog(current => ({ ...current, actions: (current.actions || []).map(action => action.id === id ? { ...action, ...patch } : action) }));
-  const addSource = () => setDraftCatalog(current => ({
+  const addSource = (source = null) => setDraftCatalog(current => ({
     ...current,
-    sources: [...(current.sources || []), { id: `iot-source-${uuid()}`, name: 'New IoT source', kind: 'sensor', transport: 'wifi/http', endpoint: '', dataType: 'json', enabled: true, description: '' }]
+    sources: [...(current.sources || []), source || { id: `iot-source-${uuid()}`, name: 'New IoT source', kind: 'sensor', transport: 'wifi/http', endpoint: '', dataType: 'json', enabled: true, description: '' }]
   }));
   const addAction = () => setDraftCatalog(current => ({
     ...current,
@@ -75,8 +87,7 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
       setStatus('Saving IoT catalog...');
       const payload = { ...(settings || { id: 'runtime-settings' }), iotSources: draftCatalog.sources || [], iotActions: draftCatalog.actions || [] };
       const response = await fetch(`${API}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await response.json();
-      if (!response.ok || data.ok === false) throw new Error(data.error || 'IoT settings save failed');
+      const data = await asJson(response);
       setSettings(data.settings);
       const nextCatalog = { sources: data.settings.iotSources || [], actions: data.settings.iotActions || [] };
       setCatalog(nextCatalog);
@@ -86,9 +97,41 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
       setStatus(error.message);
     }
   };
+  const discover = async () => {
+    try {
+      setStatus('Scanning IoT network...');
+      const body = {
+        transport: discoveryDraft.transport,
+        subnet: discoveryDraft.subnet,
+        hosts: discoveryDraft.hosts.split(',').map(item => item.trim()).filter(Boolean),
+        ports: discoveryDraft.ports.split(',').map(item => item.trim()).filter(Boolean)
+      };
+      const result = await post('/iot/discover', body);
+      setDiscoveryResult(result);
+      setStatus(`Discovery complete: ${(result.devices || []).length} device(s)`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
+  const readSource = async (source) => {
+    try {
+      const result = await post('/iot/sources/read', { sourceId: source.id });
+      setSourceResults(current => ({ ...current, [source.id]: result }));
+    } catch (error) {
+      setSourceResults(current => ({ ...current, [source.id]: { ok: false, message: error.message } }));
+    }
+  };
+  const runAction = async (action, command, options = {}) => {
+    try {
+      const result = await post(options.execute ? '/iot/actions/execute' : '/iot/actions/test', { actionId: action.id, command, approved: options.approved, dryRun: options.dryRun });
+      setActionResults(current => ({ ...current, [`${action.id}:${command}`]: result }));
+    } catch (error) {
+      setActionResults(current => ({ ...current, [`${action.id}:${command}`]: { ok: false, message: error.message } }));
+    }
+  };
 
   return <section>
-    <Header title="IoT Pipelines" subtitle="Build signal-driven workflows from cameras, microphones and sensors, then map them to safe device actions." />
+    <Header title="IoT Pipelines" subtitle="Discover devices, register signal sources, test reads, map actions, and build safe workflows for home or enterprise automation." />
     <div className="panel assistant-panel">
       <div>
         <h3>AI IoT assistant</h3>
@@ -97,6 +140,21 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
       <textarea value={prompt} onChange={e => setPrompt(e.target.value)} />
       <div className="row"><button onClick={planWithAssistant}>Plan IoT workflow</button><button className="primary" onClick={applyAssistantPlan}>Open in Workflow builder</button><button onClick={saveIoTSettings}>Save IoT catalog</button><span className="muted">{status}</span></div>
       {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b><span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
+    </div>
+
+    <div className="grid two">
+      <DiscoveryPanel adapters={adapters} draft={discoveryDraft} setDraft={setDiscoveryDraft} result={discoveryResult} discover={discover} addSource={addSource} />
+      <div className="panel">
+        <h3>Runtime architecture</h3>
+        <div className="iot-diagram compact">
+          <div className="iot-column"><b>1. Discover</b><span>Wi‑Fi HTTP scan</span><span>Bluetooth inventory</span><span>Manual gateway</span></div>
+          <div className="iot-arrow">→</div>
+          <div className="iot-column"><b>2. Connect</b><span>Source read</span><span>Webhook/sensor payload</span><span>Gateway bridge</span></div>
+          <div className="iot-arrow">→</div>
+          <div className="iot-column"><b>3. Act safely</b><span>Dry-run first</span><span>Approval required</span><span>Allowlisted hosts</span></div>
+        </div>
+        <p className="muted">Real Wi‑Fi/HTTP reads/actions require `IOT_ALLOWED_HOSTS`. Physical actions require `IOT_DEVICE_ACTIONS_ENABLED=true`; otherwise the API returns dry-run plans.</p>
+      </div>
     </div>
 
     <div className="view-switch">
@@ -123,14 +181,14 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
     </div>
     <div className="grid two iot-admin-grid">
       <div className="panel">
-        <div className="settings-card-head"><h3>IoT sources</h3><button onClick={addSource}>+ Add source</button></div>
+        <div className="settings-card-head"><h3>IoT sources</h3><button onClick={() => addSource()}>+ Add source</button></div>
         <p className="muted">Inputs: cameras, microphones, sensors, webhooks or telemetry over Wi‑Fi, Bluetooth, cable, HTTP, MQTT, RTSP and similar transports.</p>
-        <div className="settings-list">{(draftCatalog.sources || []).map(source => <IoTSourceEditor key={source.id} source={source} update={patch => updateSource(source.id, patch)} />)}</div>
+        <div className="settings-list">{(draftCatalog.sources || []).map(source => <IoTSourceEditor key={source.id} source={source} update={patch => updateSource(source.id, patch)} read={() => readSource(source)} result={sourceResults[source.id]} />)}</div>
       </div>
       <div className="panel">
         <div className="settings-card-head"><h3>IoT actions</h3><button onClick={addAction}>+ Add action</button></div>
         <p className="muted">Actions are device-like capabilities for agents: gate controllers, relays, appliances, locks or other actuators with allowed commands.</p>
-        <div className="settings-list">{(draftCatalog.actions || []).map(action => <IoTActionEditor key={action.id} action={action} update={patch => updateAction(action.id, patch)} />)}</div>
+        <div className="settings-list">{(draftCatalog.actions || []).map(action => <IoTActionEditor key={action.id} action={action} update={patch => updateAction(action.id, patch)} runAction={runAction} results={actionResults} />)}</div>
       </div>
     </div>
     <div className="panel">
@@ -146,6 +204,27 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
       </div>
     </div>
   </section>;
+}
+
+function DiscoveryPanel({ adapters, draft, setDraft, result, discover, addSource }) {
+  return <div className="panel">
+    <h3>Connectivity & discovery</h3>
+    <p className="muted">Scan small host lists/subnets for Wi‑Fi HTTP gateways, inspect known Bluetooth devices, or manually register gateways.</p>
+    <div className="drawer-grid"><label>Transport
+      <select value={draft.transport} onChange={e => setDraft({ ...draft, transport: e.target.value })}>
+        <option value="wifi/http">Wi‑Fi / HTTP</option>
+        <option value="bluetooth">Bluetooth inventory</option>
+        <option value="mqtt">MQTT gateway</option>
+        <option value="rtsp">RTSP camera gateway</option>
+      </select>
+    </label><label>Ports
+      <input value={draft.ports} onChange={e => setDraft({ ...draft, ports: e.target.value })} placeholder="80,443,8080" />
+    </label></div>
+    <div className="drawer-grid"><input value={draft.hosts} onChange={e => setDraft({ ...draft, hosts: e.target.value })} placeholder="Hosts: 192.168.1.10,192.168.1.11" /><input value={draft.subnet} onChange={e => setDraft({ ...draft, subnet: e.target.value })} placeholder="Optional CIDR: 192.168.1.0/28" /></div>
+    <div className="row"><button className="primary" onClick={discover}>Discover / inspect</button><span className="muted">Keep scans small; max hosts are server-limited.</span></div>
+    <div className="adapter-grid">{adapters.map(adapter => <div className="iot-mini" key={adapter.id}><b>{adapter.name}</b><span>{adapter.transports.join(', ')}</span><small>{adapter.notes}</small></div>)}</div>
+    {result && <div className="settings-list"><b>Discovery result</b><small>{result.notes || `${result.scannedHosts || 0} host(s), ${(result.devices || []).length} device(s)`}</small>{(result.devices || []).map(device => <div className="iot-mini" key={device.id || device.address || device.name}><b>{device.name || device.id}</b><span>{device.transport || result.transport} · {device.endpoint || device.address || 'no endpoint'}</span><small>{device.sample || device.status || ''}</small>{device.suggestedSource && <button onClick={() => addSource(device.suggestedSource)}>Add as source</button>}</div>)}</div>}
+  </div>;
 }
 
 function decorateIoTSteps(steps, settings) {
@@ -168,24 +247,28 @@ function IoTCatalog({ sources, actions }) {
   </div>;
 }
 
-function IoTSourceEditor({ source, update }) {
+function IoTSourceEditor({ source, update, read, result }) {
   return <div className="settings-card">
     <div className="settings-card-head"><b>{source.name}</b><label><input type="checkbox" checked={source.enabled !== false} onChange={e => update({ enabled: e.target.checked })} /> enabled</label></div>
     <div className="drawer-grid"><input value={source.name || ''} onChange={e => update({ name: e.target.value })} placeholder="Name" /><input value={source.kind || ''} onChange={e => update({ kind: e.target.value })} placeholder="camera / microphone / sensor" /></div>
-    <div className="drawer-grid"><input value={source.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/rtsp, mqtt, bluetooth" /><input value={source.dataType || ''} onChange={e => update({ dataType: e.target.value })} placeholder="video / audio / json" /></div>
+    <div className="drawer-grid"><input value={source.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/http, mqtt, bluetooth" /><input value={source.dataType || ''} onChange={e => update({ dataType: e.target.value })} placeholder="video / audio / json" /></div>
     <input value={source.endpoint || ''} onChange={e => update({ endpoint: e.target.value })} placeholder="Endpoint" />
     <textarea value={source.description || ''} onChange={e => update({ description: e.target.value })} placeholder="Human description and usage notes" />
+    <div className="row"><button onClick={read}>Read / test source</button><span className="muted">HTTP reads require `IOT_ALLOWED_HOSTS`.</span></div>
+    {result && <pre className={result.ok === false ? 'error' : ''}>{JSON.stringify(result, null, 2)}</pre>}
   </div>;
 }
 
-function IoTActionEditor({ action, update }) {
+function IoTActionEditor({ action, update, runAction, results }) {
+  const commands = action.commands || [];
   return <div className="settings-card">
     <div className="settings-card-head"><b>{action.name}</b><label><input type="checkbox" checked={action.enabled !== false} onChange={e => update({ enabled: e.target.checked })} /> enabled</label></div>
     <div className="drawer-grid"><input value={action.name || ''} onChange={e => update({ name: e.target.value })} placeholder="Name" /><input value={action.kind || ''} onChange={e => update({ kind: e.target.value })} placeholder="gate / relay / appliance" /></div>
-    <div className="drawer-grid"><input value={action.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/http, mqtt, bluetooth" /><input value={(action.commands || []).join(', ')} onChange={e => update({ commands: e.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="open, close, stop" /></div>
+    <div className="drawer-grid"><input value={action.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/http, mqtt, bluetooth" /><input value={commands.join(', ')} onChange={e => update({ commands: e.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="open, close, stop" /></div>
     <input value={action.endpoint || ''} onChange={e => update({ endpoint: e.target.value })} placeholder="Endpoint" />
     <label className="check-row"><input type="checkbox" checked={action.requiresApproval !== false} onChange={e => update({ requiresApproval: e.target.checked })} /> Requires approval before real device action</label>
     <textarea value={action.description || ''} onChange={e => update({ description: e.target.value })} placeholder="Human description and safety notes" />
+    <div className="command-grid">{commands.map(command => <div className="iot-mini" key={command}><b>{command}</b><div className="row"><button onClick={() => runAction(action, command)}>Dry run</button><button className="danger-btn" onClick={() => runAction(action, command, { execute: true, approved: true })}>Execute approved</button></div>{results[`${action.id}:${command}`] && <pre>{JSON.stringify(results[`${action.id}:${command}`], null, 2)}</pre>}</div>)}</div>
   </div>;
 }
 

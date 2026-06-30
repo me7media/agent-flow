@@ -7,6 +7,7 @@ from . import config
 
 
 MAX_FILE_BYTES = 250_000
+MAX_WRITE_BYTES = 500_000
 DEFAULT_IGNORES = {
     "node_modules",
     ".git",
@@ -70,9 +71,13 @@ def read_text_file(root: str | None, rel: str) -> str:
 
 
 def write_text_file(root: str | None, rel: str, content: str) -> str:
+    data = str(content or "")
+    size = len(data.encode("utf-8"))
+    if size > MAX_WRITE_BYTES:
+        raise ValueError(f"File write too large: {size} bytes")
     file_path = safe_resolve(root, rel)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(data, encoding="utf-8")
     return str(file_path.relative_to(resolve_workspace_root(root)))
 
 

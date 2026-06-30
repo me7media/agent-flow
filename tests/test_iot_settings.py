@@ -25,12 +25,12 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(gemini["defaultModel"], "gemini-new")
         self.assertEqual(saved["id"], "runtime-settings")
 
-    def test_agent_execution_defaults_to_direct_file_writes(self):
+    def test_agent_execution_defaults_to_review_file_writes(self):
         settings = default_runtime_settings()
 
         execution = agent_execution_config(settings)
 
-        self.assertEqual(execution["fileWriteMode"], "direct")
+        self.assertEqual(execution["fileWriteMode"], "review")
         self.assertEqual(execution["maxFileBlocks"], 20)
 
 

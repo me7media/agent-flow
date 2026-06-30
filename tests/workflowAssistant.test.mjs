@@ -54,3 +54,17 @@ test('plans IoT workflows with signal, safety and control agents', () => {
   assert.equal(roleKeys.includes('developer'), false);
   assert.ok(plan.agents.some(agent => agent.skills.includes('device_control')));
 });
+
+test('does not plan IoT roles when IoT is disabled', () => {
+  const plan = buildWorkflowFromPrompt({
+    prompt: 'IoT: розпізнати жест з камери та відкрити ворота',
+    agents: [],
+    idFactory: ids(),
+    iotEnabled: false
+  });
+  const roleKeys = plan.steps.map(step => step.roleKey);
+  assert.equal(roleKeys.includes('iot_source'), false);
+  assert.equal(roleKeys.includes('vision'), false);
+  assert.equal(roleKeys.includes('iot_control'), false);
+  assert.ok(roleKeys.includes('developer'));
+});

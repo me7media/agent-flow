@@ -15,7 +15,7 @@ def default_runtime_settings() -> dict[str, Any]:
         "id": SETTINGS_ID,
         "name": "Runtime settings",
         "agentExecution": {
-            "fileWriteMode": "direct",
+            "fileWriteMode": "review",
             "maxFileBlocks": 20,
         },
         "llmProviders": [

@@ -38,7 +38,7 @@ def _has_any(agent: dict[str, Any], ids: list[str]) -> bool:
 def _should_scan(agent: dict[str, Any]) -> bool:
     return _has_any(
         agent,
-        ["folder_scan", "file_read", "developer", "git_status", "codebase_map", "dependency_audit", "patch_writer", "terminal_plan"],
+        ["folder_scan", "file_read", "developer", "coder", "file_manager", "git_status", "codebase_map", "repo_indexer", "dependency_audit", "patch_writer", "terminal_plan"],
     )
 
 
@@ -49,7 +49,7 @@ def _has_git(agent: dict[str, Any]) -> bool:
 def _can_write_artifact(agent: dict[str, Any]) -> bool:
     return _has_any(
         agent,
-        ["developer", "file_write", "docs", "git_patch", "code_generation", "patch_writer", "qa", "security", "summary", "code_review", "folder_scan"],
+        ["developer", "coder", "file_manager", "file_write", "docs", "git_patch", "code_generation", "patch_writer", "qa", "security", "summary", "code_review", "folder_scan"],
     )
 
 
@@ -81,7 +81,7 @@ def _normalize_loop_groups(loop_groups: list[dict[str, Any]] | None, flow_length
 def _extract_file_blocks(output: str) -> list[dict[str, str]]:
     blocks: list[dict[str, str]] = []
     text = str(output or "")
-    for match in re.finditer(r'```file\s+path="([^"]+)"\n([\s\S]*?)```', text):
+    for match in re.finditer(r'```file\s+path=["\']([^"\']+)["\']\n([\s\S]*?)```', text):
         blocks.append({"path": match.group(1).strip(), "content": match.group(2).removesuffix("\n")})
     for match in re.finditer(r"FILE:\s*([^\n]+)\n```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)```", text):
         blocks.append({"path": match.group(1).strip(), "content": match.group(2).removesuffix("\n")})
@@ -216,7 +216,7 @@ async def _run_single_step(
         project_context += f"\n\nWORKSPACE TREE:\n{tree}"
 
     if workspace_root and _has_any(agent, ["file_read", "developer", "codebase_map"]):
-        for candidate in ["package.json", "README.md", "src/main.jsx", "src/App.jsx", "src/App.tsx"]:
+        for candidate in ["package.json", "pyproject.toml", "requirements.txt", "README.md", "app/main.py", "app/runner.py", "src/main.jsx", "src/App.jsx", "src/App.tsx"]:
             try:
                 content = read_text_file(workspace_root, candidate)
             except Exception:

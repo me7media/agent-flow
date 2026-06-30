@@ -36,7 +36,7 @@ function App() {
   const [skills, setSkills] = useState([]);
   const [mcps, setMcps] = useState([]);
   const [providers, setProviders] = useState(providerOptions);
-  const [settings, setSettings] = useState({ id: 'runtime-settings', llmProviders: providerOptions, iotSources: [], iotActions: [] });
+  const [settings, setSettings] = useState({ id: 'runtime-settings', llmProviders: providerOptions, iotSources: [], iotActions: [], features: { iot: true } });
   const [agents, setAgents] = useState(() => load('agents', []));
   const [flow, setFlow] = useState(() => load('activeFlow', []));
   const [flowMeta, setFlowMeta] = useState(() => load('activeFlowMeta', {}));
@@ -70,6 +70,8 @@ function App() {
   const persistAgents = (next) => { setAgents(next); save('agents', next); };
   const persistFlow = (next) => { const safe = normalizeFlow(next); setFlow(safe); save('activeFlow', safe); };
   const persistMeta = (next) => { const safe = { ...(next || {}), steps: normalizeFlow(next?.steps || []), loopGroups: normalizeLoopGroups(next?.loopGroups || [], normalizeFlow(next?.steps || []).length) }; setFlowMeta(safe); save('activeFlowMeta', safe); };
+  const iotEnabled = health?.features?.iot !== false && settings?.features?.iot !== false;
+  useEffect(() => { if (!iotEnabled && page === 'iot') setPage('flow'); }, [iotEnabled, page]);
   const activeRun = runSessions.find(run => run.id === activeRunId) || runSessions[0] || null;
   const runningCount = runSessions.filter(run => run.status === 'running' || run.status === 'stopping').length;
   const startRunSession = ({ name, task, workspaceRoot, stepCount }) => {
@@ -101,22 +103,20 @@ function App() {
       <div className="brand"><div className="logo">⚙️</div><div><b>Agent Flow</b><span>full-stack lite</span></div></div>
       <div className="status">API: <b>{health.provider}</b></div>
       <button className={page === 'flow' ? 'active' : ''} onClick={() => setPage('flow')}>Workflow builder</button>
-      <button className={page === 'iot' ? 'active' : ''} onClick={() => setPage('iot')}>IoT Pipelines</button>
+      {iotEnabled && <button className={page === 'iot' ? 'active' : ''} onClick={() => setPage('iot')}>IoT Pipelines</button>}
       <button className={page === 'run' ? 'active' : ''} onClick={() => setPage('run')}>Live run show{runningCount ? ` (${runningCount})` : ''}</button>
       <button className={page === 'saved' ? 'active' : ''} onClick={() => setPage('saved')}>Pipelines</button>
       <button className={page === 'builder' ? 'active' : ''} onClick={() => setPage('builder')}>Agent builder</button>
-      <button className={page === 'workspace' ? 'active' : ''} onClick={() => setPage('workspace')}>Workspace / Git</button>
       <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}>Settings</button>
       <button className={page === 'skills' ? 'active' : ''} onClick={() => setPage('skills')}>Skills / MCP</button>
       <button className="ghost" onClick={() => setDark(!dark)}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
     </aside>
     <main>
-      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} settings={settings} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
-      {page === 'iot' && <IoTPipelinesPage agents={agents} settings={settings} setSettings={setSettings} setAgents={persistAgents} setFlow={persistFlow} setMeta={persistMeta} setPage={setPage} />}
+      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} settings={settings} iotEnabled={iotEnabled} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {iotEnabled && page === 'iot' && <IoTPipelinesPage agents={agents} settings={settings} setSettings={setSettings} setAgents={persistAgents} setFlow={persistFlow} setMeta={persistMeta} setPage={setPage} />}
       {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
       {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} />}
-      {page === 'workspace' && <WorkspacePage />}
       {page === 'settings' && <SettingsPage settings={settings} setSettings={setSettings} setProviders={setProviders} />}
       {page === 'skills' && <SkillsPage skills={skills} mcps={mcps} />}
     </main>
@@ -125,7 +125,7 @@ function App() {
 
 function Header({ title, subtitle }) { return <header className="header"><h1>{title}</h1><p>{subtitle}</p></header>; }
 
-function FlowPage({ agents, setAgents, skills, mcps, providers, settings, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
+function FlowPage({ agents, setAgents, skills, mcps, providers, settings, iotEnabled, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
   const [dragAgentId, setDragAgentId] = useState(null);
   const [dragStepIndex, setDragStepIndex] = useState(null);
   const [viewMode, setViewMode] = useState('chain');
@@ -167,11 +167,11 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, settings, flow, 
   const selectedStep = flow.find(step => step.id === selectedStepId) || null;
   const selectedAgent = selectedStep ? agents.find(agent => agent.id === selectedStep.agentId) : null;
   const planWithAssistant = () => {
-    const plan = buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid });
+    const plan = buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled });
     setAssistantPlan(plan);
   };
   const applyAssistantPlan = (mode = 'replace') => {
-    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid });
+    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled });
     setAgents(plan.agents);
     const nextFlow = mode === 'append' ? appendWorkflowSteps(flow, plan.steps, uuid) : plan.steps;
     setFlow(nextFlow);
@@ -447,16 +447,9 @@ function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
     setDraft({ ...draft, provider: providerId, model: provider?.defaultModel || draft.model });
   };
   const saveAgent = async () => { const agent = { ...draft, id: draft.id || slug(draft.name) || uuid() }; const next = agents.filter(a => a.id !== agent.id).concat(agent); setAgents(next); await fetch(`${API}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(agent) }).catch(() => null); setDraft(empty); };
-  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two"><div className="panel form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{loadingAgents && <div className="muted">Loading agents...</div>}{!loadingAgents && !agents.length && <div className="muted">No agents loaded yet. Check API connection or create the first agent.</div>}{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
-}
-
-function WorkspacePage() {
-  const [workspaceRoot, setWorkspaceRoot] = useState('./workspace'); const [path, setPath] = useState('.'); const [tree, setTree] = useState(''); const [filePath, setFilePath] = useState('README.md'); const [fileContent, setFileContent] = useState(''); const [git, setGit] = useState(null);
-  const scan = async () => setTree((await post('/workspace/scan', { workspaceRoot, path, depth: 4 })).tree || ''); const read = async () => setFileContent((await post('/workspace/read', { workspaceRoot, path: filePath })).content || ''); const write = async () => await post('/workspace/write', { workspaceRoot, path: filePath, content: fileContent }); const loadGit = async () => setGit((await post('/git/info', { workspaceRoot })).git);
-  return <section><Header title="Workspace / Git" subtitle="Point the system to a local project folder. Agents can scan folders, read/write files, and use safe git info." /><div className="toolbar"><input value={workspaceRoot} onChange={e => setWorkspaceRoot(e.target.value)} placeholder="/absolute/or/relative/project/path" /><button onClick={scan}>Scan folder</button><button onClick={loadGit}>Git info</button></div><div className="grid two"><div className="panel"><input value={path} onChange={e => setPath(e.target.value)} /><pre>{tree}</pre>{git && <pre>{JSON.stringify(git, null, 2)}</pre>}</div><div className="panel"><input value={filePath} onChange={e => setFilePath(e.target.value)} /><button onClick={read}>Read</button><button onClick={write}>Write</button><textarea rows="18" value={fileContent} onChange={e => setFileContent(e.target.value)} /></div></div></section>;
+  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two agent-builder-grid"><div className="panel form agent-builder-form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{loadingAgents && <div className="muted">Loading agents...</div>}{!loadingAgents && !agents.length && <div className="muted">No agents loaded yet. Check API connection or create the first agent.</div>}{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
 }
 
 function SkillsPage({ skills, mcps }) { return <section><Header title="Skills / MCP catalog" subtitle="Base capabilities that can be attached to agents." /><div className="grid two"><div className="panel"><h3>Skills</h3>{skills.map(s => <div className="item" key={s.id}><b>{s.name}</b><span>{s.category}</span><p>{s.description}</p></div>)}</div><div className="panel"><h3>MCP connectors</h3>{mcps.map(m => <div className="item" key={m.id}><b>{m.name}</b><span>{m.endpoint}</span><p>{m.description}</p></div>)}</div></div></section>; }
-async function post(url, body) { const res = await fetch(`${API}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await res.json(); if (!res.ok || data.ok === false) throw new Error(data.error || 'Request failed'); return data; }
 function slug(text) { return String(text || '').toLowerCase().trim().replace(/[^a-z0-9а-яіїєґ]+/gi, '-').replace(/^-|-$/g, ''); }
 createRoot(document.getElementById('root')).render(<App />);

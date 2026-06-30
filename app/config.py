@@ -23,6 +23,11 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name: str, default: str = "") -> list[str]:
+    value = os.getenv(name, default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 PORT = int(os.getenv("PORT", "8787"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
@@ -35,3 +40,10 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 WORKSPACE_ROOT = os.getenv("WORKSPACE_ROOT", "./workspace")
 AGENT_ALLOW_DIRECT_FILE_WRITES = env_bool("AGENT_ALLOW_DIRECT_FILE_WRITES")
+IOT_ENABLED = env_bool("IOT_ENABLED", True)
+IOT_DEVICE_ACTIONS_ENABLED = env_bool("IOT_DEVICE_ACTIONS_ENABLED", False)
+IOT_ALLOWED_HOSTS = env_list("IOT_ALLOWED_HOSTS")
+IOT_DISCOVERY_MAX_HOSTS = int(os.getenv("IOT_DISCOVERY_MAX_HOSTS", "32"))
+CORS_ORIGINS = env_list("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+HTTP_ACTION_ALLOWED_HOSTS = env_list("HTTP_ACTION_ALLOWED_HOSTS")
+EMAIL_ACTION_ENABLED = env_bool("EMAIL_ACTION_ENABLED", False)

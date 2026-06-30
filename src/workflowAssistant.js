@@ -87,14 +87,15 @@ const roleCatalog = [
 
 const defaultOrder = ['requirements', 'scanner', 'iot_source', 'vision', 'architect', 'developer', 'qa', 'iot_safety', 'iot_control', 'security', 'docs', 'final'];
 
-export function buildWorkflowFromPrompt({ prompt, agents = [], existingFlow = [], idFactory = defaultIdFactory } = {}) {
+export function buildWorkflowFromPrompt({ prompt, agents = [], existingFlow = [], idFactory = defaultIdFactory, iotEnabled = true } = {}) {
   const text = String(prompt || '').trim();
   const lower = text.toLowerCase();
-  const isIot = ['iot', 'camera', 'microphone', 'sensor', 'gesture', 'gate', 'mqtt', 'rtsp', 'камер', 'датчик', 'жест', 'ворот'].some(token => lower.includes(token));
+  const isIot = iotEnabled && ['iot', 'camera', 'microphone', 'sensor', 'gesture', 'gate', 'mqtt', 'rtsp', 'камер', 'датчик', 'жест', 'ворот'].some(token => lower.includes(token));
   const requested = isIot
     ? new Set(['requirements', 'iot_source', 'iot_safety', 'iot_control', 'final'])
     : new Set(['requirements', 'scanner', 'developer', 'qa', 'final']);
   for (const role of roleCatalog) {
+    if (!iotEnabled && (role.key.startsWith('iot') || role.key === 'vision')) continue;
     if (role.match.some(token => lower.includes(token))) requested.add(role.key);
   }
   if (lower.includes('full') || lower.includes('production') || lower.includes('повн')) {
