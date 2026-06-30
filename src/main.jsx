@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { appendWorkflowSteps, buildWorkflowFromPrompt } from './workflowAssistant.js';
 import './styles.css';
 
 const API = 'http://localhost:8787/api';
@@ -70,16 +71,16 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="logo">⚙️</div><div><b>Agent Flow</b><span>full-stack lite</span></div></div>
       <div className="status">API: <b>{health.provider}</b></div>
-      <button className={page === 'flow' ? 'active' : ''} onClick={() => setPage('flow')}>Pipeline</button>
+      <button className={page === 'flow' ? 'active' : ''} onClick={() => setPage('flow')}>Workflow builder</button>
       <button className={page === 'run' ? 'active' : ''} onClick={() => setPage('run')}>Live run show{runningCount ? ` (${runningCount})` : ''}</button>
-      <button className={page === 'saved' ? 'active' : ''} onClick={() => setPage('saved')}>Saved sequences</button>
+      <button className={page === 'saved' ? 'active' : ''} onClick={() => setPage('saved')}>Pipelines</button>
       <button className={page === 'builder' ? 'active' : ''} onClick={() => setPage('builder')}>Agent builder</button>
       <button className={page === 'workspace' ? 'active' : ''} onClick={() => setPage('workspace')}>Workspace / Git</button>
       <button className={page === 'skills' ? 'active' : ''} onClick={() => setPage('skills')}>Skills / MCP</button>
       <button className="ghost" onClick={() => setDark(!dark)}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
     </aside>
     <main>
-      {page === 'flow' && <FlowPage agents={agents} skills={skills} mcps={mcps} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
       {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
       {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} />}
@@ -91,9 +92,13 @@ function App() {
 
 function Header({ title, subtitle }) { return <header className="header"><h1>{title}</h1><p>{subtitle}</p></header>; }
 
-function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
+function FlowPage({ agents, setAgents, skills, mcps, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
   const [dragAgentId, setDragAgentId] = useState(null);
   const [dragStepIndex, setDragStepIndex] = useState(null);
+  const [viewMode, setViewMode] = useState('chain');
+  const [selectedStepId, setSelectedStepId] = useState(null);
+  const [assistantPrompt, setAssistantPrompt] = useState('');
+  const [assistantPlan, setAssistantPlan] = useState(null);
   const [task, setTask] = useState(meta.task || 'Проаналізуй папку проєкту, знайди проблеми, запропонуй зміни, підготуй код/патч і README.');
   const [flowName, setFlowName] = useState(meta.name || 'Developer project pipeline');
   const [workspaceRoot, setWorkspaceRoot] = useState(meta.workspaceRoot || './workspace');
@@ -126,6 +131,22 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
   const groupsForIndex = (index) => loopGroups.filter(g => index >= Number(g.start) && index <= Number(g.end));
   const groupStartsAt = (index) => loopGroups.filter(g => Number(g.start) === index);
   const groupEndsAt = (index) => loopGroups.filter(g => Number(g.end) === index);
+  const selectedStep = flow.find(step => step.id === selectedStepId) || null;
+  const selectedAgent = selectedStep ? agents.find(agent => agent.id === selectedStep.agentId) : null;
+  const planWithAssistant = () => {
+    const plan = buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid });
+    setAssistantPlan(plan);
+  };
+  const applyAssistantPlan = (mode = 'replace') => {
+    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid });
+    setAgents(plan.agents);
+    const nextFlow = mode === 'append' ? appendWorkflowSteps(flow, plan.steps, uuid) : plan.steps;
+    setFlow(nextFlow);
+    setLoopGroups(mode === 'append' ? [] : plan.loopGroups);
+    setMeta({ ...metaPayload(), task: assistantPrompt || task, steps: nextFlow, loopGroups: mode === 'append' ? [] : plan.loopGroups });
+    setSelectedStepId(nextFlow[0]?.id || null);
+    setAssistantPlan(plan);
+  };
 
   const saveFlowBackend = async () => {
     const payload = metaPayload(); setMeta(payload);
@@ -168,7 +189,7 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
   };
 
   return <section>
-    <Header title="Pipeline: agents sequence" subtitle="Drag agents into the highlighted work area, add prompts, create visible loop groups directly inside the chain, and watch execution in Live run show." />
+    <Header title="Workflow builder" subtitle="Build agent workflows as a chain or n8n-style diagram, tune each step, and watch execution in Live run show." />
     <div className="toolbar">
       <input value={flowName} onChange={e => setFlowName(e.target.value)} onBlur={persistAll} placeholder="Sequence name" />
       <input value={workspaceRoot} onChange={e => setWorkspaceRoot(e.target.value)} onBlur={persistAll} placeholder="Project folder / WORKSPACE_ROOT" />
@@ -180,16 +201,35 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
 
     <textarea className="task" value={task} onChange={e => setTask(e.target.value)} onBlur={persistAll} placeholder="Initial task for the whole pipeline" />
 
+    <div className="panel assistant-panel">
+      <div>
+        <h3>AI workflow assistant</h3>
+        <p>Describe what you want to build. The assistant will reuse preset agents where possible, create missing agents, and place them in a useful workflow order.</p>
+      </div>
+      <textarea value={assistantPrompt} onChange={e => setAssistantPrompt(e.target.value)} placeholder="Example: Build a backend export API with migrations, tests, docs and QA review." />
+      <div className="row">
+        <button onClick={planWithAssistant}>Plan workflow</button>
+        <button className="primary" onClick={() => applyAssistantPlan('replace')}>Replace workflow</button>
+        <button disabled={!flow.length} onClick={() => applyAssistantPlan('append')}>Append to current</button>
+      </div>
+      {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b><span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
+    </div>
+
+    <div className="view-switch">
+      <button className={viewMode === 'chain' ? 'active' : ''} onClick={() => setViewMode('chain')}>Chain editor</button>
+      <button className={viewMode === 'diagram' ? 'active' : ''} onClick={() => setViewMode('diagram')}>Diagram view</button>
+    </div>
+
     <div className="grid two">
-      <div className="panel"><h3>Available agents</h3><div className="cards">{agents.map(agent => <div key={agent.id} className="agent-card" draggable onDragStart={() => setDragAgentId(agent.id)}><b>{agent.name}</b><span>{agent.role}</span><small>{agent.skills?.length || 0} skills · {agent.mcps?.length || 0} MCP</small></div>)}</div></div>
+      <div className="panel"><h3>Available agents</h3><div className="cards">{agents.map(agent => <div key={agent.id} className="agent-card" draggable onDragStart={(event) => { setDragAgentId(agent.id); event.dataTransfer.setData('text/plain', agent.id); }}><b>{agent.name}</b><span>{agent.role}</span><small>{agent.skills?.length || 0} skills · {agent.mcps?.length || 0} MCP</small></div>)}</div></div>
       <div className="panel drop-panel">
-        <h3>Highlighted sequence area</h3>
+        <h3>{viewMode === 'diagram' ? 'Workflow diagram' : 'Highlighted sequence area'}</h3>
         <div className="inline-loop-builder"><label>From <input type="number" min="1" max={Math.max(flow.length, 1)} value={groupStart} onChange={e => setGroupStart(e.target.value)} /></label><label>To <input type="number" min="1" max={Math.max(flow.length, 1)} value={groupEnd} onChange={e => setGroupEnd(e.target.value)} /></label><label>Repeat <input type="number" min="2" max="20" value={groupLoops} onChange={e => setGroupLoops(e.target.value)} /></label><button disabled={flow.length < 2} onClick={addLoopGroup}>🔁 Group selected range</button></div>
-        <div className={`dropzone ${flow.length ? '' : 'empty'}`} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragAgentId) addAgentToFlow(dragAgentId); setDragAgentId(null); }}>
+        {viewMode === 'diagram' ? <WorkflowDiagram flow={flow} agents={agents} loopGroups={loopGroups} selectedStepId={selectedStepId} setSelectedStepId={setSelectedStepId} onDropAgent={(agentId) => addAgentToFlow(agentId)} /> : <div className={`dropzone ${flow.length ? '' : 'empty'}`} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragAgentId) addAgentToFlow(dragAgentId); setDragAgentId(null); }}>
           {!flow.length && <div className="empty-hint">Drop agents here. The order is saved and every next agent receives the previous result.</div>}
           {flow.map((step, index) => { const agent = agents.find(a => a.id === step.agentId); return <React.Fragment key={step.id}>
             {groupStartsAt(index).map(g => <div key={`${g.id}-start`} className="group-band start"><b>🔁 {g.name}</b><span>steps #{g.start + 1}–#{g.end + 1} · {g.loops} cycles</span><button onClick={() => removeLoopGroup(g.id)}>remove</button></div>)}
-            <div className={`flow-step ${groupsForIndex(index).length ? 'inside-group' : ''}`} draggable onDragStart={() => setDragStepIndex(index)} onDragOver={e => e.preventDefault()} onDrop={() => { moveStep(dragStepIndex, index); setDragStepIndex(null); }}>
+            <div className={`flow-step ${groupsForIndex(index).length ? 'inside-group' : ''} ${selectedStepId === step.id ? 'selected-step' : ''}`} draggable onClick={() => setSelectedStepId(step.id)} onDragStart={() => setDragStepIndex(index)} onDragOver={e => e.preventDefault()} onDrop={() => { moveStep(dragStepIndex, index); setDragStepIndex(null); }}>
               <div className="step-head"><span className="badge">#{index + 1}</span><b>{agent?.name || step.agentId}</b><button onClick={() => removeStep(step.id)}>✕</button></div>
               {!!groupsForIndex(index).length && <div className="loop-tags">{groupsForIndex(index).map(g => <span key={g.id}>🔁 {g.name}: {g.loops}x</span>)}</div>}
               <small>{agent?.role}</small><textarea value={step.note} onChange={e => updateStep(step.id, { note: e.target.value })} placeholder="Extra prompt/comment for this agent" />
@@ -197,11 +237,74 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
             </div>
             {groupEndsAt(index).map(g => <div key={`${g.id}-end`} className="group-band end">↩ repeat block {g.loops}x then continue</div>)}
           </React.Fragment>; })}
-        </div>
+        </div>}
       </div>
     </div>
+    <StepSettingsDrawer step={selectedStep} agent={selectedAgent} agents={agents} skills={skills} mcps={mcps} updateStep={updateStep} close={() => setSelectedStepId(null)} />
     {error && <div className="error">{error}</div>}
   </section>;
+}
+
+function WorkflowDiagram({ flow, agents, loopGroups, selectedStepId, setSelectedStepId, onDropAgent }) {
+  const nodeWidth = 220;
+  const nodeHeight = 112;
+  const gapX = 92;
+  const top = 70;
+  const width = Math.max(760, flow.length * (nodeWidth + gapX) + 100);
+  const height = 310;
+  const nodeFor = (index) => ({ x: 50 + index * (nodeWidth + gapX), y: top });
+  return <div className={`diagram-canvas ${flow.length ? '' : 'empty'}`} onDragOver={e => e.preventDefault()} onDrop={(event) => { const agentId = event.dataTransfer.getData('text/plain'); if (agentId) onDropAgent(agentId); }}>
+    {!flow.length && <div className="empty-hint">Drop agents here to build a visual workflow.</div>}
+    {!!flow.length && <div className="diagram-stage" style={{ width, minHeight: height }}>
+      <svg className="diagram-links" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" /></marker></defs>
+        {flow.slice(0, -1).map((step, index) => {
+          const from = nodeFor(index);
+          const to = nodeFor(index + 1);
+          return <path key={step.id} d={`M${from.x + nodeWidth} ${from.y + 55} C${from.x + nodeWidth + 42} ${from.y + 55}, ${to.x - 42} ${to.y + 55}, ${to.x} ${to.y + 55}`} markerEnd="url(#arrow)" />;
+        })}
+        {loopGroups.map(group => {
+          const start = nodeFor(group.start);
+          const end = nodeFor(group.end);
+          return <path key={group.id} className="loop-link" d={`M${end.x + nodeWidth - 12} ${end.y + nodeHeight + 22} C${end.x + 90} ${end.y + 210}, ${start.x + 120} ${start.y + 210}, ${start.x + 20} ${start.y + nodeHeight + 22}`} markerEnd="url(#arrow)" />;
+        })}
+      </svg>
+      {flow.map((step, index) => {
+        const agent = agents.find(item => item.id === step.agentId);
+        const position = nodeFor(index);
+        return <button key={step.id} className={`diagram-node ${selectedStepId === step.id ? 'selected-node' : ''}`} style={{ left: position.x, top: position.y, width: nodeWidth }} onClick={() => setSelectedStepId(step.id)}>
+          <span className="node-index">#{index + 1}</span>
+          <b>{agent?.name || step.agentId}</b>
+          <small>{agent?.role || 'Agent step'}</small>
+          <em>{step.loops || 1} loop{Number(step.loops || 1) === 1 ? '' : 's'}</em>
+        </button>;
+      })}
+    </div>}
+  </div>;
+}
+
+function StepSettingsDrawer({ step, agent, agents, skills, mcps, updateStep, close }) {
+  if (!step) return null;
+  const agentSkills = (agent?.skills || []).map(id => skills.find(skill => skill.id === id)?.name || id);
+  const agentMcps = (agent?.mcps || []).map(id => mcps.find(mcp => mcp.id === id)?.name || id);
+  return <aside className="step-drawer">
+    <div className="drawer-head"><div><b>Step settings</b><span>{agent?.name || step.agentId}</span></div><button onClick={close}>Close</button></div>
+    <label>Agent
+      <select value={step.agentId} onChange={event => updateStep(step.id, { agentId: event.target.value })}>
+        {agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    <label>Extra prompt
+      <textarea value={step.note || ''} onChange={event => updateStep(step.id, { note: event.target.value })} />
+    </label>
+    <div className="drawer-grid">
+      <label>Loops <input type="number" min="1" max="10" value={step.loops || 1} onChange={event => updateStep(step.id, { loops: event.target.value })} /></label>
+      <label>Cron <input value={step.cron || ''} onChange={event => updateStep(step.id, { cron: event.target.value })} placeholder="optional" /></label>
+    </div>
+    <label className="check-row"><input type="checkbox" checked={step.dependsOnPrevious !== false} onChange={event => updateStep(step.id, { dependsOnPrevious: event.target.checked })} /> Use previous output</label>
+    <div className="drawer-meta"><b>Agent skills</b><span>{agentSkills.join(', ') || 'No skills'}</span></div>
+    <div className="drawer-meta"><b>MCP connectors</b><span>{agentMcps.join(', ') || 'No MCP connectors'}</span></div>
+  </aside>;
 }
 
 function RunShowPage({ runs, activeRun, setActiveRunId, stopRun }) {
@@ -250,7 +353,7 @@ function RunLogs({ logs }) { if (!logs.length) return null; return <div classNam
 function SavedFlowsPage({ setPage, setFlow, setMeta }) {
   const [flows, setFlows] = useState([]); const loadFlows = () => fetch(`${API}/flows`).then(r => r.json()).then(setFlows).catch(() => setFlows([])); useEffect(loadFlows, []);
   const remove = async (id) => { await fetch(`${API}/flows/${id}`, { method: 'DELETE' }); loadFlows(); };
-  return <section><Header title="Saved sequences" subtitle="Saved chain configurations with task, workspace path, cron, ordered steps and visible loop groups." /><div className="panel">{!flows.length && <p>No saved sequences yet.</p>}{flows.map(flow => <div className="saved" key={flow.id}><div><b>{flow.name}</b><span>{flow.steps?.length || 0} steps · chain loops {flow.loops || 1} · loop groups {flow.loopGroups?.length || 0} · cron {flow.cron || 'none'}</span><small>{flow.task}</small></div><button onClick={() => { const steps = normalizeFlow(flow.steps || []); const safe = { ...flow, steps, loopGroups: normalizeLoopGroups(flow.loopGroups || [], steps.length) }; save('activeFlowMeta', safe); save('activeFlow', steps); setMeta(safe); setFlow(steps); setPage('flow'); }}>Load</button><button onClick={() => remove(flow.id)}>Delete</button></div>)}</div></section>;
+  return <section><Header title="Pipelines" subtitle="Saved workflow configurations with task, workspace path, cron, ordered steps and visible loop groups." /><div className="panel">{!flows.length && <p>No pipelines yet.</p>}{flows.map(flow => <div className="saved" key={flow.id}><div><b>{flow.name}</b><span>{flow.steps?.length || 0} steps · chain loops {flow.loops || 1} · loop groups {flow.loopGroups?.length || 0} · cron {flow.cron || 'none'}</span><small>{flow.task}</small></div><button onClick={() => { const steps = normalizeFlow(flow.steps || []); const safe = { ...flow, steps, loopGroups: normalizeLoopGroups(flow.loopGroups || [], steps.length) }; save('activeFlowMeta', safe); save('activeFlow', steps); setMeta(safe); setFlow(steps); setPage('flow'); }}>Load</button><button onClick={() => remove(flow.id)}>Delete</button></div>)}</div></section>;
 }
 
 function AgentBuilder({ agents, setAgents, skills, mcps }) {

@@ -5,6 +5,9 @@ Full Agent Flow project with the original React/Vite UI and a Python/FastAPI bac
 ## What Was Ported
 
 - Original React/Vite UI from the Node project.
+- Workflow builder UI with chain and diagram views.
+- AI workflow assistant that builds pipelines from a prompt using preset or generated agents.
+- Pipelines page for saved workflow configurations.
 - Registry endpoints for agents, skills, MCP connectors and flows.
 - SQLite storage under `app/data/agent_flow.sqlite3`.
 - SQL migrations under `app/migrations`.

@@ -7,6 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "client": "vite --host 0.0.0.0",
     "server": ".venv/bin/python run.py",
+    "test": "node --test",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },
@@ -17,4 +18,3 @@
   },
   "devDependencies": {}
 }
-
