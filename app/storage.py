@@ -4,7 +4,8 @@ import json
 from copy import deepcopy
 from typing import Any, Callable
 
-from .config import DB_FILE
+from .config import LEGACY_DB_FILE
+from .database import read_state, write_state
 from .registry import default_agents, default_mcps, default_skills
 
 
@@ -19,19 +20,29 @@ def initial_db() -> dict[str, Any]:
 
 
 def read_db() -> dict[str, Any]:
-    try:
-        with DB_FILE.open("r", encoding="utf-8") as file:
-            return json.load(file)
-    except Exception:
+    db = read_state()
+    if not any(db.get(key) for key in ("agents", "skills", "mcps", "flows", "runs", "savedSequences")):
+        if LEGACY_DB_FILE.exists():
+            try:
+                db = json.loads(LEGACY_DB_FILE.read_text(encoding="utf-8"))
+                write_db(db)
+                return db
+            except Exception:
+                pass
         db = initial_db()
         write_db(db)
         return deepcopy(db)
+    db.setdefault("agents", [])
+    db.setdefault("skills", [])
+    db.setdefault("mcps", [])
+    db.setdefault("flows", [])
+    db.setdefault("runs", [])
+    db.setdefault("savedSequences", [])
+    return db
 
 
 def write_db(db: dict[str, Any]) -> None:
-    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with DB_FILE.open("w", encoding="utf-8") as file:
-        json.dump(db, file, ensure_ascii=False, indent=2)
+    write_state(db)
 
 
 def patch_db(mutator: Callable[[dict[str, Any]], dict[str, Any] | None]) -> dict[str, Any]:
@@ -39,4 +50,3 @@ def patch_db(mutator: Callable[[dict[str, Any]], dict[str, Any] | None]) -> dict
     next_db = mutator(db) or db
     write_db(next_db)
     return next_db
-

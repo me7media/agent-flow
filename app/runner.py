@@ -112,7 +112,8 @@ async def _write_generated_file_blocks(agent: dict[str, Any], workspace_root: st
             await _emit(on_event, {"type": "warning", "message": f"Generated file write failed: {target_path}: {exc}"})
             continue
         written.append(path)
-        await _emit(on_event, {"type": "artifact", "agentName": agent.get("name"), "path": path, "message": f"Generated file written: {path}"})
+        mode = "source file written" if direct_writes else "generated file staged for review"
+        await _emit(on_event, {"type": "artifact", "agentName": agent.get("name"), "path": path, "message": f"{mode}: {path}"})
     return written
 
 
@@ -212,15 +213,22 @@ async def _run_single_step(
         )
 
     incoming_output = "" if step.get("dependsOnPrevious") is False else previous_output
+    direct_writes = (os.getenv("AGENT_ALLOW_DIRECT_FILE_WRITES") or "").lower() == "true"
+    write_mode = (
+        "DIRECT WRITE MODE IS ENABLED. When code changes are required, output complete file blocks using real project-relative paths such as app/services/example.py, src/components/Example.jsx, tests/test_example.py or nested folders that should be created."
+        if direct_writes
+        else "DIRECT WRITE MODE IS DISABLED. Still output complete file blocks with the intended real project-relative paths. The backend will stage them under agent-flow-output/generated/<agent>/ for human review instead of overwriting source files."
+    )
     prompt = (
         f"{agent.get('systemPrompt') or ''}\n\nAGENT ROLE:\n{agent.get('role')}\n\nAGENT SKILLS:\n{ctx['skillsText']}\n\n"
         f"CONNECTED MCP:\n{ctx['mcpsText']}\n\nUSER TASK:\n{task}\n\nSTEP COMMENT / EXTRA PROMPT:\n{step.get('note') or '-'}\n\n"
         f"PREVIOUS OUTPUT:\n{incoming_output or '-'}{project_context}\n\nIMPORTANT EXECUTION RULES:\n"
         "- Return concrete, actionable output.\n- Do not answer with generic text. Produce real deliverables.\n"
         "- If you are a developer, include exact files, patch plan, and full code blocks.\n"
+        f"- {write_mode}\n"
         "- To create files, use this exact format and relative paths only:\n\n"
-        '```file path="agent-flow-output/example.md"\ncontent here\n```\n\n'
-        "- If direct source edits are needed, output a patch first and explain commands.\n"
+        '```file path="src/example.js"\ncontent here\n```\n\n'
+        "- Do not wrap implementation-only changes only in Markdown. Use file blocks for code, tests, config and folders that should exist.\n"
         "- Keep dependencies minimal and explain commands.\n"
     )
 

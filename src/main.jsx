@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -18,9 +18,9 @@ function App() {
   const [agents, setAgents] = useState(() => load('agents', []));
   const [flow, setFlow] = useState(() => load('activeFlow', []));
   const [flowMeta, setFlowMeta] = useState(() => load('activeFlowMeta', {}));
-  const [runEvents, setRunEvents] = useState([]);
-  const [runLogs, setRunLogs] = useState([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [runSessions, setRunSessions] = useState([]);
+  const [activeRunId, setActiveRunId] = useState(null);
+  const runControllers = useRef(new Map());
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; save('darkMode', dark); }, [dark]);
   useEffect(() => {
@@ -40,13 +40,38 @@ function App() {
   const persistAgents = (next) => { setAgents(next); save('agents', next); };
   const persistFlow = (next) => { const safe = normalizeFlow(next); setFlow(safe); save('activeFlow', safe); };
   const persistMeta = (next) => { const safe = { ...(next || {}), steps: normalizeFlow(next?.steps || []), loopGroups: normalizeLoopGroups(next?.loopGroups || [], normalizeFlow(next?.steps || []).length) }; setFlowMeta(safe); save('activeFlowMeta', safe); };
+  const activeRun = runSessions.find(run => run.id === activeRunId) || runSessions[0] || null;
+  const runningCount = runSessions.filter(run => run.status === 'running' || run.status === 'stopping').length;
+  const startRunSession = ({ name, task, workspaceRoot, stepCount }) => {
+    const id = uuid();
+    const session = { id, name: name || 'Pipeline run', task, workspaceRoot, stepCount, startedAt: new Date().toISOString(), status: 'running', events: [], logs: [], error: '' };
+    setRunSessions(prev => [session, ...prev]);
+    setActiveRunId(id);
+    setPage('run');
+    return id;
+  };
+  const updateRunSession = (id, updater) => setRunSessions(prev => prev.map(run => run.id === id ? updater(run) : run));
+  const appendRunEvent = (id, event) => updateRunSession(id, run => {
+    const logs = event.type === 'run_done' && event.logs ? event.logs : event.type === 'step_done' && event.log ? [...run.logs, event.log] : run.logs;
+    return { ...run, events: [...run.events, event], logs };
+  });
+  const finishRunSession = (id, status, error = '') => {
+    runControllers.current.delete(id);
+    updateRunSession(id, run => ({ ...run, status, error, finishedAt: new Date().toISOString() }));
+  };
+  const stopRun = (id) => {
+    const controller = runControllers.current.get(id);
+    if (!controller) return;
+    updateRunSession(id, run => ({ ...run, status: 'stopping' }));
+    controller.abort();
+  };
 
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><div className="logo">⚙️</div><div><b>Agent Flow</b><span>full-stack lite</span></div></div>
       <div className="status">API: <b>{health.provider}</b></div>
       <button className={page === 'flow' ? 'active' : ''} onClick={() => setPage('flow')}>Pipeline</button>
-      <button className={page === 'run' ? 'active' : ''} onClick={() => setPage('run')}>Live run console</button>
+      <button className={page === 'run' ? 'active' : ''} onClick={() => setPage('run')}>Live run show{runningCount ? ` (${runningCount})` : ''}</button>
       <button className={page === 'saved' ? 'active' : ''} onClick={() => setPage('saved')}>Saved sequences</button>
       <button className={page === 'builder' ? 'active' : ''} onClick={() => setPage('builder')}>Agent builder</button>
       <button className={page === 'workspace' ? 'active' : ''} onClick={() => setPage('workspace')}>Workspace / Git</button>
@@ -54,8 +79,8 @@ function App() {
       <button className="ghost" onClick={() => setDark(!dark)}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
     </aside>
     <main>
-      {page === 'flow' && <FlowPage agents={agents} skills={skills} mcps={mcps} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} setRunEvents={setRunEvents} setRunLogs={setRunLogs} isRunning={isRunning} setIsRunning={setIsRunning} />}
-      {page === 'run' && <RunConsolePage events={runEvents} logs={runLogs} isRunning={isRunning} />}
+      {page === 'flow' && <FlowPage agents={agents} skills={skills} mcps={mcps} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
+      {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
       {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} />}
       {page === 'workspace' && <WorkspacePage />}
@@ -66,7 +91,7 @@ function App() {
 
 function Header({ title, subtitle }) { return <header className="header"><h1>{title}</h1><p>{subtitle}</p></header>; }
 
-function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage, setRunEvents, setRunLogs, isRunning, setIsRunning }) {
+function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage, startRunSession, appendRunEvent, finishRunSession, runControllers, runningCount }) {
   const [dragAgentId, setDragAgentId] = useState(null);
   const [dragStepIndex, setDragStepIndex] = useState(null);
   const [task, setTask] = useState(meta.task || 'Проаналізуй папку проєкту, знайди проблеми, запропонуй зміни, підготуй код/патч і README.');
@@ -109,10 +134,13 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
   };
 
   const runChain = async () => {
-    setIsRunning(true); setError(''); setRunEvents([]); setRunLogs([]); setPage('run');
+    setError('');
+    const runId = startRunSession({ name: flowName, task, workspaceRoot, stepCount: flow.length });
+    const controller = new AbortController();
+    runControllers.current.set(runId, controller);
     try {
       await saveFlowBackend();
-      const res = await fetch(`${API}/flows/run/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flow, agents, skills, mcps, task, loops, workspaceRoot, loopGroups }) });
+      const res = await fetch(`${API}/flows/run/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flow, agents, skills, mcps, task, loops, workspaceRoot, loopGroups }), signal: controller.signal });
       if (!res.ok || !res.body) throw new Error('Stream run failed');
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -125,25 +153,29 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
         for (const line of lines) {
           if (!line.trim()) continue;
           const event = JSON.parse(line);
-          setRunEvents(prev => [...prev, event]);
-          if (event.type === 'step_done' && event.log) setRunLogs(prev => [...prev, event.log]);
-          if (event.type === 'run_done' && event.logs) setRunLogs(event.logs);
+          appendRunEvent(runId, event);
           if (event.type === 'error') throw new Error(event.error || 'Run error');
         }
       }
-    } catch (e) { setError(e.message); setRunEvents(prev => [...prev, { type: 'error', message: e.message, at: new Date().toISOString() }]); }
-    finally { setIsRunning(false); }
+      finishRunSession(runId, 'done');
+    } catch (e) {
+      const stopped = e.name === 'AbortError';
+      const event = { type: stopped ? 'stopped' : 'error', message: stopped ? 'Run stopped by user.' : e.message, at: new Date().toISOString() };
+      appendRunEvent(runId, event);
+      finishRunSession(runId, stopped ? 'stopped' : 'error', stopped ? '' : e.message);
+      if (!stopped) setError(e.message);
+    }
   };
 
   return <section>
-    <Header title="Pipeline: agents sequence" subtitle="Drag agents into the highlighted work area, add prompts, create visible loop groups directly inside the chain, and watch execution in the live console." />
+    <Header title="Pipeline: agents sequence" subtitle="Drag agents into the highlighted work area, add prompts, create visible loop groups directly inside the chain, and watch execution in Live run show." />
     <div className="toolbar">
       <input value={flowName} onChange={e => setFlowName(e.target.value)} onBlur={persistAll} placeholder="Sequence name" />
       <input value={workspaceRoot} onChange={e => setWorkspaceRoot(e.target.value)} onBlur={persistAll} placeholder="Project folder / WORKSPACE_ROOT" />
       <input value={chainCron} onChange={e => setChainCron(e.target.value)} onBlur={persistAll} placeholder="Chain cron, e.g. */30 * * * *" />
       <label>Chain loops <input type="number" min="1" max="10" value={loops} onChange={e => setLoops(e.target.value)} onBlur={persistAll} /></label>
       <button onClick={saveFlowBackend}>💾 Save</button>
-      <button className="primary" disabled={!flow.length || isRunning} onClick={runChain}>{isRunning ? 'Running...' : '▶ Run live'}</button>
+      <button className="primary" disabled={!flow.length} onClick={runChain}>▶ Run live{runningCount ? ` · ${runningCount} active` : ''}</button>
     </div>
 
     <textarea className="task" value={task} onChange={e => setTask(e.target.value)} onBlur={persistAll} placeholder="Initial task for the whole pipeline" />
@@ -172,12 +204,45 @@ function FlowPage({ agents, skills, mcps, flow, setFlow, meta, setMeta, setPage,
   </section>;
 }
 
-function RunConsolePage({ events, logs, isRunning }) {
+function RunShowPage({ runs, activeRun, setActiveRunId, stopRun }) {
+  const events = activeRun?.events || [];
+  const logs = activeRun?.logs || [];
+  const isRunning = activeRun?.status === 'running' || activeRun?.status === 'stopping';
   return <section>
-    <Header title="Live run console" subtitle="Real-time execution log, like CLI agents: tools, step starts, loop group cycles, artifacts and final output." />
-    <div className="panel console-panel"><div className="console-head"><b>{isRunning ? '● Running' : '○ Idle / finished'}</b><span>{events.length} events · {logs.length} step results</span></div><div className="terminal">{!events.length && <div className="muted">Run a pipeline to see live progress here.</div>}{events.map((e, i) => <div key={i} className={`term-line ${e.type}` }><span className="term-time">{(e.at || '').slice(11, 19)}</span><span className="term-type">{e.type}</span><span>{e.message || e.error || e.agentName || e.tool || ''}</span>{e.path && <code>{e.path}</code>}{e.log && <span>{e.log.agentName}: done</span>}</div>)}</div></div>
-    <RunLogs logs={logs} />
+    <Header title="Live run show" subtitle="Watch every running pipeline, switch between active runs, stop a run, and inspect its live events and artifacts." />
+    <div className="run-layout">
+      <div className="panel run-list-panel">
+        <div className="run-list-head"><h3>Runs in work</h3><span>{runs.filter(run => run.status === 'running' || run.status === 'stopping').length} active</span></div>
+        {!runs.length && <div className="muted">Run a pipeline to see it here.</div>}
+        <div className="run-list">
+          {runs.map(run => <button key={run.id} className={`run-list-item ${activeRun?.id === run.id ? 'active-run' : ''}`} onClick={() => setActiveRunId(run.id)}>
+            <b>{run.name}</b>
+            <span>{statusLabel(run.status)} · {run.stepCount || 0} steps · {(run.startedAt || '').slice(11, 19)}</span>
+            <small>{run.task}</small>
+          </button>)}
+        </div>
+      </div>
+      <div>
+        <div className="panel console-panel">
+          <div className="console-head">
+            <div><b>{activeRun ? statusLabel(activeRun.status) : 'No run selected'}</b><span>{activeRun?.name || 'Start a pipeline from the Pipeline page'}</span></div>
+            <div className="console-actions"><span>{events.length} events · {logs.length} step results</span>{isRunning && <button className="danger-btn" onClick={() => stopRun(activeRun.id)}>{activeRun.status === 'stopping' ? 'Stopping...' : 'Stop run'}</button>}</div>
+          </div>
+          <div className="terminal">{!events.length && <div className="muted">Run a pipeline to see live progress here.</div>}{events.map((e, i) => <div key={i} className={`term-line ${e.type}` }><span className="term-time">{(e.at || '').slice(11, 19)}</span><span className="term-type">{e.type}</span><span>{e.message || e.error || e.agentName || e.tool || ''}</span>{e.path && <code>{e.path}</code>}{e.log && <span>{e.log.agentName}: done</span>}</div>)}</div>
+        </div>
+        <RunLogs logs={logs} />
+      </div>
+    </div>
   </section>;
+}
+
+function statusLabel(status) {
+  if (status === 'running') return 'Running';
+  if (status === 'stopping') return 'Stopping';
+  if (status === 'stopped') return 'Stopped';
+  if (status === 'error') return 'Error';
+  if (status === 'done') return 'Done';
+  return 'Idle';
 }
 
 function RunLogs({ logs }) { if (!logs.length) return null; return <div className="panel logs"><h3>Step outputs and artifacts</h3>{logs.map((log, i) => <details key={i} open={i === logs.length - 1}><summary>Chain {log.loop} · {log.loopGroupName ? `${log.loopGroupName} cycle ${log.groupLoop} · ` : ''}Step {log.step}.{log.stepLoop} · {log.agentName}{log.artifactPath ? ` · file: ${log.artifactPath}` : ''}</summary><pre>{log.output}</pre></details>)}</div>; }

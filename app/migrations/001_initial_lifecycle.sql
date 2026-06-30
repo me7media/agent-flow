@@ -1,0 +1,50 @@
+CREATE TABLE agents (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE skills (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mcps (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE flows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE runs (
+  id TEXT PRIMARY KEY,
+  flow_id TEXT,
+  created_at TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+
+CREATE TABLE saved_sequences (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_runs_created_at ON runs(created_at);
+CREATE INDEX idx_runs_flow_id ON runs(flow_id);
+

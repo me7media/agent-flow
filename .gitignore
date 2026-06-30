@@ -6,4 +6,6 @@ __pycache__
 .DS_Store
 dist
 app/data/db.json
+app/data/agent_flow.sqlite3
+app/data/agent_flow.sqlite3-*
 workspace/agent-flow-output

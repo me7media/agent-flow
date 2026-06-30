@@ -6,7 +6,8 @@ Full Agent Flow project with the original React/Vite UI and a Python/FastAPI bac
 
 - Original React/Vite UI from the Node project.
 - Registry endpoints for agents, skills, MCP connectors and flows.
-- JSON file storage under `app/data/db.json`.
+- SQLite storage under `app/data/agent_flow.sqlite3`.
+- SQL migrations under `app/migrations`.
 - Flow execution with chain loops, visible loop groups and per-step loops.
 - NDJSON streaming from `/api/flows/run/stream`.
 - Workspace scan/read/write helpers with path traversal protection.
@@ -49,6 +50,8 @@ EMAIL_SECURE=false
 AGENT_ALLOW_DIRECT_FILE_WRITES=false
 ```
 
+When `AGENT_ALLOW_DIRECT_FILE_WRITES=false`, developer agents can still emit real `file` blocks, but the backend stages them under `agent-flow-output/generated/<agent>/` for review. When it is `true`, those same file blocks are written to their exact project-relative paths, including new folders.
+
 ## API Compatibility
 
 The Python backend implements these routes:
@@ -72,4 +75,4 @@ The Python backend implements these routes:
 
 ## Notes From The Port
 
-The original Node backend uses a JSON DB and mostly stateless services, so the Python version mirrors that architecture instead of introducing a database or worker queue. Cron scheduling is kept in-process, matching the original behavior where saved cron flows are scheduled after they are posted to the API.
+The Python backend uses SQLite plus SQL migrations for project lifecycle data. Agent outputs, flow definitions and run history survive process restarts without relying on a hand-edited JSON database. Cron scheduling is still kept in-process, matching the original behavior where saved cron flows are scheduled after they are posted to the API.
