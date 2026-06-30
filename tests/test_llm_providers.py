@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app import llm
-from app.llm import available_providers, mock_llm
+from app.llm import ProviderConfigurationError, available_providers, mock_llm
 
 
 class LlmProviderTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
         llm._call_gemini = self.original_call_gemini
         llm._call_anthropic = self.original_call_anthropic
 
-    async def test_cloud_providers_without_keys_fall_back_to_mock(self):
+    async def test_assistant_cloud_providers_without_keys_fall_back_to_mock(self):
         llm.config.GEMINI_API_KEY = ""
         llm.config.ANTHROPIC_API_KEY = ""
 
@@ -62,6 +62,14 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("MOCK OUTPUT - gemini-test", gemini_output)
         self.assertIn("MOCK OUTPUT - claude-test", claude_output)
+
+    async def test_workflow_provider_without_runtime_key_does_not_fall_back_to_mock(self):
+        llm.config.GEMINI_API_KEY = "env-key-for-assistant-only"
+
+        with self.assertRaises(ProviderConfigurationError) as ctx:
+            await llm.call_llm(provider="gemini", model="gemini-test", temperature=0.1, prompt="hello", runtime_settings={}, usage="workflow")
+
+        self.assertIn("env keys are not used by workflow agents", str(ctx.exception))
 
     async def test_provider_dispatch_uses_configured_provider(self):
         llm.config.GEMINI_API_KEY = "test-key"
@@ -108,7 +116,7 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
 
-        output = await llm.call_llm(provider="gemini", temperature=0.2, prompt="hello", runtime_settings=runtime_settings)
+        output = await llm.call_llm(provider="gemini", temperature=0.2, prompt="hello", runtime_settings=runtime_settings, usage="workflow")
 
         self.assertEqual(output, "runtime gemini ok")
         self.assertEqual(captured, {"model": "gemini-runtime", "api_key": "runtime-key"})
@@ -134,7 +142,7 @@ class LlmProviderAsyncTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
 
-        output = await llm.call_llm(provider="local-openai", temperature=0.2, prompt="hello", runtime_settings=runtime_settings)
+        output = await llm.call_llm(provider="local-openai", temperature=0.2, prompt="hello", runtime_settings=runtime_settings, usage="workflow")
 
         self.assertEqual(output, "custom ok")
         self.assertEqual(captured, {"model": "local-model", "api_key": "local-key", "base_url": "http://localhost:9999/v1"})

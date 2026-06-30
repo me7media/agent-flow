@@ -20,13 +20,21 @@ test('builds a workflow from prompt using preset agents', () => {
   assert.ok(plan.steps.length >= 5);
   assert.ok(plan.steps.some(step => step.agentId === 'autonomous-developer-v2'));
   assert.ok(plan.loopGroups.length >= 1);
-  assert.ok(plan.createdAgents.every(agent => agent.provider));
+  assert.ok(plan.warning.includes('No configured workflow LLM provider'));
+  assert.ok(plan.createdAgents.every(agent => !agent.provider));
 });
 
 test('creates missing agents when presets are unavailable', () => {
-  const plan = buildWorkflowFromPrompt({ prompt: 'Create secure production workflow with docs', agents: [], idFactory: ids() });
+  const plan = buildWorkflowFromPrompt({
+    prompt: 'Create secure production workflow with docs',
+    agents: [],
+    idFactory: ids(),
+    providers: [{ id: 'gemini', name: 'Gemini', configured: true, enabled: true, defaultModel: 'gemini-1.5-flash' }]
+  });
   assert.ok(plan.createdAgents.length >= 5);
   assert.ok(plan.agents.some(agent => agent.name === 'Security Reviewer'));
+  assert.ok(plan.createdAgents.every(agent => agent.provider === 'gemini'));
+  assert.ok(plan.createdAgents.every(agent => agent.model === 'gemini-1.5-flash'));
   assert.ok(plan.steps.some(step => step.note.includes('Prompt: Create secure production workflow with docs')));
 });
 

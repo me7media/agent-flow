@@ -8,48 +8,58 @@ from typing import Any
 import httpx
 
 from . import config
-from .settings_service import provider_config
+from .settings_service import agent_execution_config, provider_config
 
 
-def available_providers(runtime_settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+class ProviderConfigurationError(RuntimeError):
+    pass
+
+
+def available_providers(runtime_settings: dict[str, Any] | None = None, usage: str = "workflow") -> list[dict[str, Any]]:
     base = [
-        {"id": "mock", "name": "Mock", "configured": True, "defaultModel": "mock-model"},
-        {"id": "openai", "name": "OpenAI", "configured": bool(config.OPENAI_API_KEY), "defaultModel": config.OPENAI_MODEL},
-        {"id": "ollama", "name": "Ollama", "configured": True, "defaultModel": config.OLLAMA_MODEL, "baseUrl": config.OLLAMA_BASE_URL},
-        {"id": "gemini", "name": "Gemini", "configured": bool(config.GEMINI_API_KEY), "defaultModel": config.GEMINI_MODEL},
-        {"id": "anthropic", "name": "Claude", "configured": bool(config.ANTHROPIC_API_KEY), "defaultModel": config.ANTHROPIC_MODEL},
+        {"id": "mock", "name": "Mock", "providerKind": "mock", "configured": usage != "workflow", "defaultModel": "mock-model"},
+        {"id": "openai", "name": "OpenAI", "providerKind": "openai", "configured": usage != "workflow" and bool(config.OPENAI_API_KEY), "defaultModel": config.OPENAI_MODEL},
+        {"id": "ollama", "name": "Ollama", "providerKind": "ollama", "configured": usage != "workflow", "defaultModel": config.OLLAMA_MODEL, "baseUrl": config.OLLAMA_BASE_URL},
+        {"id": "gemini", "name": "Gemini", "providerKind": "gemini", "configured": usage != "workflow" and bool(config.GEMINI_API_KEY), "defaultModel": config.GEMINI_MODEL},
+        {"id": "anthropic", "name": "Claude", "providerKind": "anthropic", "configured": usage != "workflow" and bool(config.ANTHROPIC_API_KEY), "defaultModel": config.ANTHROPIC_MODEL},
     ]
     if not runtime_settings:
         return base
     configured: list[dict[str, Any]] = []
     seen = set()
+    execution = agent_execution_config(runtime_settings)
     for provider in base:
         runtime = provider_config(runtime_settings, provider["id"])
-        api_key = runtime.get("apiKey")
+        provider_kind = str(runtime.get("providerKind") or provider["providerKind"]).strip().lower()
+        ready, status = _provider_readiness(runtime, provider["id"], provider_kind, usage, execution)
         item = {
             **provider,
             "name": runtime.get("name") or provider["name"],
             "enabled": runtime.get("enabled", True),
             "defaultModel": runtime.get("defaultModel") or provider["defaultModel"],
+            "providerKind": provider_kind,
+            "configured": ready,
+            "status": status,
         }
         if runtime.get("baseUrl"):
             item["baseUrl"] = runtime["baseUrl"]
-        if api_key:
-            item["configured"] = True
         configured.append(item)
         seen.add(item["id"])
     for runtime in runtime_settings.get("llmProviders") or []:
         if not runtime.get("id") or runtime["id"] in seen:
             continue
+        provider_kind = str(runtime.get("providerKind") or "openai").strip().lower()
+        ready, status = _provider_readiness(runtime, runtime["id"], provider_kind, usage, execution)
         configured.append(
             {
                 "id": runtime["id"],
                 "name": runtime.get("name") or runtime["id"],
                 "enabled": runtime.get("enabled", True),
-                "configured": bool(runtime.get("apiKey") or runtime.get("baseUrl")),
                 "defaultModel": runtime.get("defaultModel") or "",
                 "baseUrl": runtime.get("baseUrl") or "",
-                "providerKind": runtime.get("providerKind") or "openai",
+                "providerKind": provider_kind,
+                "configured": ready,
+                "status": status,
             }
         )
     return configured
@@ -61,7 +71,11 @@ async def call_llm(
     temperature: Any = None,
     prompt: str = "",
     runtime_settings: dict[str, Any] | None = None,
+    usage: str = "assistant",
 ) -> str:
+    if usage == "workflow":
+        return await _call_workflow_llm(provider=provider, model=model, temperature=temperature, prompt=prompt, runtime_settings=runtime_settings)
+
     requested_provider = str(provider or "").strip().lower()
     runtime = provider_config(runtime_settings, requested_provider)
     provider_id = _normalize_provider(provider, model)
@@ -90,6 +104,100 @@ async def call_llm(
             return mock_llm(model=selected_model or config.ANTHROPIC_MODEL, temperature=temperature, prompt=prompt)
         return await _call_anthropic(model=selected_model, temperature=temperature, prompt=prompt, api_key=api_key)
     return mock_llm(model=selected_model, temperature=temperature, prompt=prompt)
+
+
+async def _call_workflow_llm(
+    provider: str | None,
+    model: str | None,
+    temperature: Any,
+    prompt: str,
+    runtime_settings: dict[str, Any] | None,
+) -> str:
+    runtime_settings = runtime_settings or {}
+    requested_provider = str(provider or "").strip().lower()
+    runtime = provider_config(runtime_settings, requested_provider) if requested_provider else _first_ready_workflow_provider(runtime_settings)
+    if not runtime:
+        raise ProviderConfigurationError("No workflow LLM provider is configured. Add one in Settings → Agent LLM providers.")
+
+    provider_id = str(runtime.get("id") or requested_provider or "").strip().lower()
+    provider_kind = str(runtime.get("providerKind") or provider_id or "openai").strip().lower()
+    if provider_kind == "claude":
+        provider_kind = "anthropic"
+    selected_model = model or runtime.get("defaultModel")
+    execution = agent_execution_config(runtime_settings)
+    ready, status = _provider_readiness(runtime, provider_id, provider_kind, "workflow", execution)
+    if not ready:
+        label = runtime.get("name") or provider_id or requested_provider or "selected provider"
+        raise ProviderConfigurationError(f"Workflow provider is not ready: {label}. {status}")
+    if not selected_model:
+        raise ProviderConfigurationError(f"Workflow provider {provider_id} has no model selected.")
+
+    if provider_kind == "mock":
+        return mock_llm(model=selected_model, temperature=temperature, prompt=prompt)
+    if provider_kind == "openai":
+        return await _call_openai(
+            model=selected_model,
+            temperature=temperature,
+            prompt=prompt,
+            api_key=runtime.get("apiKey") or "",
+            base_url=runtime.get("baseUrl"),
+        )
+    if provider_kind == "ollama":
+        return await _call_ollama(model=selected_model, temperature=temperature, prompt=prompt, base_url=runtime.get("baseUrl"))
+    if provider_kind == "gemini":
+        return await _call_gemini(model=selected_model, temperature=temperature, prompt=prompt, api_key=runtime.get("apiKey") or "")
+    if provider_kind == "anthropic":
+        return await _call_anthropic(model=selected_model, temperature=temperature, prompt=prompt, api_key=runtime.get("apiKey") or "")
+    raise ProviderConfigurationError(f"Unsupported workflow provider kind: {provider_kind}")
+
+
+def _first_ready_workflow_provider(runtime_settings: dict[str, Any]) -> dict[str, Any]:
+    execution = agent_execution_config(runtime_settings)
+    for provider in runtime_settings.get("llmProviders") or []:
+        provider_kind = str(provider.get("providerKind") or provider.get("id") or "openai").strip().lower()
+        ready, _ = _provider_readiness(provider, provider.get("id") or "", provider_kind, "workflow", execution)
+        if ready:
+            return provider
+    return {}
+
+
+def _provider_readiness(
+    runtime: dict[str, Any],
+    provider_id: str,
+    provider_kind: str,
+    usage: str,
+    execution: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    if runtime.get("enabled") is False:
+        return False, "Disabled"
+    if usage != "workflow":
+        if provider_kind == "mock":
+            return True, "Assistant test provider"
+        if provider_kind == "ollama":
+            return True, "Assistant can use local Ollama/base URL"
+        if provider_kind == "openai":
+            return bool(runtime.get("apiKey") or config.OPENAI_API_KEY or runtime.get("baseUrl")), "Uses assistant env/API key or configured base URL"
+        if provider_kind == "gemini":
+            return bool(runtime.get("apiKey") or config.GEMINI_API_KEY), "Uses assistant env/API key"
+        if provider_kind == "anthropic":
+            return bool(runtime.get("apiKey") or config.ANTHROPIC_API_KEY), "Uses assistant env/API key"
+        return False, f"Unsupported provider kind: {provider_kind}"
+
+    execution = execution or {}
+    if provider_kind == "mock":
+        return bool(execution.get("allowMockProvider")), "Mock is disabled for workflow agents unless explicitly allowed"
+    if provider_kind == "ollama":
+        return bool(runtime.get("baseUrl")), "Ready via configured Ollama base URL" if runtime.get("baseUrl") else "Set Base URL for workflow agents"
+    if provider_kind == "gemini":
+        return bool(runtime.get("apiKey")), "Ready via SQLite API key" if runtime.get("apiKey") else "Add API key in Settings; env keys are not used by workflow agents"
+    if provider_kind == "anthropic":
+        return bool(runtime.get("apiKey")), "Ready via SQLite API key" if runtime.get("apiKey") else "Add API key in Settings; env keys are not used by workflow agents"
+    if provider_kind == "openai":
+        if provider_id == "openai":
+            return bool(runtime.get("apiKey")), "Ready via SQLite API key" if runtime.get("apiKey") else "Add API key in Settings; env keys are not used by workflow agents"
+        ready = bool(runtime.get("apiKey") or runtime.get("baseUrl"))
+        return ready, "Ready via custom key/base URL" if ready else "Add API key or Base URL for this custom provider"
+    return False, f"Unsupported provider kind: {provider_kind}"
 
 
 def _normalize_provider(provider: str | None, model: str | None) -> str:

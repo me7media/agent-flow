@@ -28,6 +28,9 @@ const providerOptions = [
   { id: 'gemini', name: 'Gemini', defaultModel: 'gemini-1.5-flash' },
   { id: 'anthropic', name: 'Claude', defaultModel: 'claude-3-5-sonnet-latest' }
 ];
+const isWorkflowProviderReady = (provider) => provider?.enabled !== false && provider?.configured === true;
+const firstReadyProvider = (providers = []) => providers.find(isWorkflowProviderReady) || null;
+const providerOptionLabel = (provider) => `${provider.name || provider.id}${provider.enabled === false ? ' (disabled)' : provider.configured === false ? ' (not configured)' : ''}`;
 
 function App() {
   const [page, setPage] = useState('flow');
@@ -113,7 +116,7 @@ function App() {
     </aside>
     <main>
       {page === 'flow' && <FlowPage agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} settings={settings} iotEnabled={iotEnabled} flow={flow} setFlow={persistFlow} meta={flowMeta} setMeta={persistMeta} setPage={setPage} startRunSession={startRunSession} appendRunEvent={appendRunEvent} finishRunSession={finishRunSession} runControllers={runControllers} runningCount={runningCount} />}
-      {iotEnabled && page === 'iot' && <IoTPipelinesPage agents={agents} settings={settings} setSettings={setSettings} setAgents={persistAgents} setFlow={persistFlow} setMeta={persistMeta} setPage={setPage} />}
+      {iotEnabled && page === 'iot' && <IoTPipelinesPage agents={agents} providers={providers} settings={settings} setSettings={setSettings} setAgents={persistAgents} setFlow={persistFlow} setMeta={persistMeta} setPage={setPage} />}
       {page === 'run' && <RunShowPage runs={runSessions} activeRun={activeRun} setActiveRunId={setActiveRunId} stopRun={stopRun} />}
       {page === 'saved' && <SavedFlowsPage setPage={setPage} setFlow={persistFlow} setMeta={persistMeta} />}
       {page === 'builder' && <AgentBuilder agents={agents} setAgents={persistAgents} skills={skills} mcps={mcps} providers={providers} />}
@@ -142,6 +145,7 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, settings, iotEna
   const [groupEnd, setGroupEnd] = useState(2);
   const [groupLoops, setGroupLoops] = useState(2);
   const [error, setError] = useState('');
+  const readyProvider = firstReadyProvider(providers);
 
   useEffect(() => {
     setTask(meta.task || 'Проаналізуй папку проєкту, знайди проблеми, запропонуй зміни, підготуй код/патч і README.');
@@ -167,11 +171,11 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, settings, iotEna
   const selectedStep = flow.find(step => step.id === selectedStepId) || null;
   const selectedAgent = selectedStep ? agents.find(agent => agent.id === selectedStep.agentId) : null;
   const planWithAssistant = () => {
-    const plan = buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled });
+    const plan = buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled, providers });
     setAssistantPlan(plan);
   };
   const applyAssistantPlan = (mode = 'replace') => {
-    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled });
+    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt: assistantPrompt || task, agents, existingFlow: flow, idFactory: uuid, iotEnabled, providers });
     setAgents(plan.agents);
     const nextFlow = mode === 'append' ? appendWorkflowSteps(flow, plan.steps, uuid) : plan.steps;
     setFlow(nextFlow);
@@ -223,6 +227,7 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, settings, iotEna
 
   return <section>
     <Header title="Workflow builder" subtitle="Build agent workflows as a chain or n8n-style diagram, tune each step, and watch execution in Live run show." />
+    {!readyProvider && <div className="error">No workflow LLM provider is configured. Open Settings → Agent LLM providers and add an API key or local base URL before running agents.</div>}
     <div className="toolbar">
       <input value={flowName} onChange={e => setFlowName(e.target.value)} onBlur={persistAll} placeholder="Sequence name" />
       <input value={workspaceRoot} onChange={e => setWorkspaceRoot(e.target.value)} onBlur={persistAll} placeholder="Project folder / WORKSPACE_ROOT" />
@@ -245,7 +250,7 @@ function FlowPage({ agents, setAgents, skills, mcps, providers, settings, iotEna
         <button className="primary" onClick={() => applyAssistantPlan('replace')}>Replace workflow</button>
         <button disabled={!flow.length} onClick={() => applyAssistantPlan('append')}>Append to current</button>
       </div>
-      {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b><span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
+      {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b>{assistantPlan.warning && <em>{assistantPlan.warning}</em>}<span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
     </div>
 
     <div className="view-switch">
@@ -323,6 +328,8 @@ function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, prov
   const agentMcps = (agent?.mcps || []).map(id => mcps.find(mcp => mcp.id === id)?.name || id);
   const iotSources = settings?.iotSources || [];
   const iotActions = settings?.iotActions || [];
+  const selectedProvider = providers.find(item => item.id === agent?.provider) || null;
+  const providerReady = selectedProvider ? isWorkflowProviderReady(selectedProvider) : !!firstReadyProvider(providers);
   const updateAgent = (patch) => {
     if (!agent) return;
     setAgents(agents.map(item => item.id === agent.id ? { ...item, ...patch } : item));
@@ -332,6 +339,10 @@ function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, prov
     updateStep(step.id, { [key]: current.includes(id) ? current.filter(item => item !== id) : [...current, id] });
   };
   const chooseProvider = (providerId) => {
+    if (!providerId) {
+      updateAgent({ provider: '', model: '' });
+      return;
+    }
     const provider = providers.find(item => item.id === providerId);
     updateAgent({ provider: providerId, model: provider?.defaultModel || agent?.model || '' });
   };
@@ -344,13 +355,18 @@ function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, prov
     </label>
     <div className="drawer-grid">
       <label>Provider
-        <select value={agent?.provider || 'openai'} onChange={event => chooseProvider(event.target.value)}>
-          {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}
+        <select value={agent?.provider || ''} onChange={event => chooseProvider(event.target.value)}>
+          <option value="">Auto: first ready provider</option>
+          {providers.map(provider => <option key={provider.id} value={provider.id} disabled={!isWorkflowProviderReady(provider)}>{providerOptionLabel(provider)}</option>)}
         </select>
       </label>
       <label>Model
         <input value={agent?.model || ''} onChange={event => updateAgent({ model: event.target.value })} placeholder="model name" />
       </label>
+    </div>
+    <div className={providerReady ? 'drawer-meta' : 'error'}>
+      <b>Provider readiness</b>
+      <span>{providerReady ? 'This step can run with a configured workflow provider.' : 'This agent has no configured workflow provider. Configure it in Settings before running.'}</span>
     </div>
     <label>Extra prompt
       <textarea value={step.note || ''} onChange={event => updateStep(step.id, { note: event.target.value })} />
@@ -423,9 +439,12 @@ function SavedFlowsPage({ setPage, setFlow, setMeta }) {
 }
 
 function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
-  const empty = { id: '', name: '', role: '', provider: 'openai', model: 'gpt-4.1-mini', temperature: 0.2, skills: [], mcps: [], systemPrompt: '' };
+  const defaultProvider = firstReadyProvider(providers);
+  const empty = { id: '', name: '', role: '', provider: defaultProvider?.id || '', model: defaultProvider?.defaultModel || '', temperature: 0.2, skills: [], mcps: [], systemPrompt: '' };
   const [draft, setDraft] = useState(empty);
   const [loadingAgents, setLoadingAgents] = useState(false);
+  const draftProvider = providers.find(provider => provider.id === draft.provider);
+  const draftProviderReady = draft.provider ? isWorkflowProviderReady(draftProvider) : !!defaultProvider;
   useEffect(() => {
     if (agents.length) return;
     let alive = true;
@@ -440,14 +459,66 @@ function AgentBuilder({ agents, setAgents, skills, mcps, providers }) {
       .finally(() => { if (alive) setLoadingAgents(false); });
     return () => { alive = false; };
   }, [agents.length]);
-  const markdown = useMemo(() => `# ${draft.name || 'Agent'}\n\n## Role\n${draft.role}\n\n## Provider\n${draft.provider || 'openai'}\n\n## Model\n${draft.model}\n\n## Temperature\n${draft.temperature}\n\n## Skills\n${(draft.skills || []).map(id => `- ${skills.find(s => s.id === id)?.name || id}`).join('\n')}\n\n## MCP\n${(draft.mcps || []).map(id => `- ${mcps.find(m => m.id === id)?.name || id}`).join('\n')}\n\n## System Prompt\n${draft.systemPrompt}\n`, [draft, skills, mcps]);
+  const markdown = useMemo(() => `# ${draft.name || 'Agent'}\n\n## Role\n${draft.role}\n\n## Provider\n${draft.provider || 'Auto: first ready workflow provider'}\n\n## Model\n${draft.model || 'Provider default'}\n\n## Temperature\n${draft.temperature}\n\n## Skills\n${(draft.skills || []).map(id => `- ${skills.find(s => s.id === id)?.name || id}`).join('\n')}\n\n## MCP\n${(draft.mcps || []).map(id => `- ${mcps.find(m => m.id === id)?.name || id}`).join('\n')}\n\n## System Prompt\n${draft.systemPrompt}\n`, [draft, skills, mcps]);
   const toggle = (key, id) => setDraft(d => ({ ...d, [key]: d[key].includes(id) ? d[key].filter(x => x !== id) : [...d[key], id] }));
   const changeProvider = (providerId) => {
+    if (!providerId) {
+      setDraft({ ...draft, provider: '', model: '' });
+      return;
+    }
     const provider = providers.find(item => item.id === providerId);
     setDraft({ ...draft, provider: providerId, model: provider?.defaultModel || draft.model });
   };
   const saveAgent = async () => { const agent = { ...draft, id: draft.id || slug(draft.name) || uuid() }; const next = agents.filter(a => a.id !== agent.id).concat(agent); setAgents(next); await fetch(`${API}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(agent) }).catch(() => null); setDraft(empty); };
-  return <section><Header title="Agent builder" subtitle="Create an agent, choose an LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." /><div className="grid two agent-builder-grid"><div className="panel form agent-builder-form"><input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" /><input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" /><div className="row"><label>Provider <select value={draft.provider || 'openai'} onChange={e => changeProvider(e.target.value)}>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured === false ? ' (not configured)' : ''}</option>)}</select></label><input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Model" /><label>Temp <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} /></label></div><textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" /><h3>Skills</h3><div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div><h3>MCP</h3><div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div><button className="primary" onClick={saveAgent}>Save agent</button></div><div className="panel"><h3>Existing agents</h3>{loadingAgents && <div className="muted">Loading agents...</div>}{!loadingAgents && !agents.length && <div className="muted">No agents loaded yet. Check API connection or create the first agent.</div>}{agents.map(a => <div className="saved" key={a.id}><div><b>{a.name}</b><span>{a.provider || 'openai'} · {a.model}</span><small>{a.role}</small></div><button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button></div>)}<h3>Markdown export</h3><pre>{markdown}</pre></div></div></section>;
+  return <section>
+    <Header title="Agent builder" subtitle="Create an agent, choose a configured workflow LLM provider, attach skills and MCP connectors, then export its configuration as Markdown." />
+    {!defaultProvider && <div className="error">No workflow provider is ready. Configure one in Settings before creating production agents.</div>}
+    <div className="grid two agent-builder-grid">
+      <div className="panel form agent-builder-form">
+        <input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="Agent name" />
+        <input value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} placeholder="Role / goal" />
+        <div className="agent-provider-grid">
+          <label>Provider
+            <select value={draft.provider || ''} onChange={e => changeProvider(e.target.value)}>
+              <option value="">Auto: first ready provider</option>
+              {providers.map(provider => <option key={provider.id} value={provider.id} disabled={!isWorkflowProviderReady(provider)}>{providerOptionLabel(provider)}</option>)}
+            </select>
+          </label>
+          <label>Model
+            <input value={draft.model} onChange={e => setDraft({ ...draft, model: e.target.value })} placeholder="Use provider default or override" />
+          </label>
+          <label>Temp
+            <input type="number" step="0.05" min="0" max="1" value={draft.temperature} onChange={e => setDraft({ ...draft, temperature: e.target.value })} />
+          </label>
+        </div>
+        <div className={draftProviderReady ? 'drawer-meta' : 'error'}>
+          <b>Workflow readiness</b>
+          <span>{draftProviderReady ? 'This agent can run with a configured workflow provider.' : 'Select a ready provider or configure one in Settings.'}</span>
+        </div>
+        <textarea rows="8" value={draft.systemPrompt} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} placeholder="System prompt / instruction" />
+        <h3>Skills</h3>
+        <div className="chips">{skills.map(s => <button key={s.id} className={draft.skills.includes(s.id) ? 'selected' : ''} onClick={() => toggle('skills', s.id)}>{s.name}</button>)}</div>
+        <h3>MCP</h3>
+        <div className="chips">{mcps.map(m => <button key={m.id} className={draft.mcps.includes(m.id) ? 'selected' : ''} onClick={() => toggle('mcps', m.id)}>{m.name}</button>)}</div>
+        <button className="primary" onClick={saveAgent}>Save agent</button>
+      </div>
+      <div className="panel">
+        <h3>Existing agents</h3>
+        {loadingAgents && <div className="muted">Loading agents...</div>}
+        {!loadingAgents && !agents.length && <div className="muted">No agents loaded yet. Check API connection or create the first agent.</div>}
+        {agents.map(a => {
+          const provider = providers.find(item => item.id === a.provider);
+          const ready = a.provider ? isWorkflowProviderReady(provider) : !!defaultProvider;
+          return <div className="saved" key={a.id}>
+            <div><b>{a.name}</b><span>{a.provider || 'auto'} · {a.model || 'provider default'} · {ready ? 'ready' : 'not configured'}</span><small>{a.role}</small></div>
+            <button onClick={() => setDraft({ ...empty, ...JSON.parse(JSON.stringify(a)) })}>Edit</button>
+          </div>;
+        })}
+        <h3>Markdown export</h3>
+        <pre>{markdown}</pre>
+      </div>
+    </div>
+  </section>;
 }
 
 function SkillsPage({ skills, mcps }) { return <section><Header title="Skills / MCP catalog" subtitle="Base capabilities that can be attached to agents." /><div className="grid two"><div className="panel"><h3>Skills</h3>{skills.map(s => <div className="item" key={s.id}><b>{s.name}</b><span>{s.category}</span><p>{s.description}</p></div>)}</div><div className="panel"><h3>MCP connectors</h3>{mcps.map(m => <div className="item" key={m.id}><b>{m.name}</b><span>{m.endpoint}</span><p>{m.description}</p></div>)}</div></div></section>; }

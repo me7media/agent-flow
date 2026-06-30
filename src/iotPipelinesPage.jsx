@@ -10,7 +10,7 @@ const asJson = async (response) => {
 };
 const post = (url, body) => fetch(`${API}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(asJson);
 
-export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, setFlow, setMeta, setPage }) {
+export function IoTPipelinesPage({ agents, providers = [], settings, setSettings, setAgents, setFlow, setMeta, setPage }) {
   const [pipelines, setPipelines] = useState([]);
   const [catalog, setCatalog] = useState({ sources: [], actions: [] });
   const [draftCatalog, setDraftCatalog] = useState({ sources: settings?.iotSources || [], actions: settings?.iotActions || [] });
@@ -42,11 +42,11 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
     setPage('flow');
   };
   const planWithAssistant = () => {
-    const plan = buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true });
+    const plan = buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true, providers });
     setAssistantPlan(plan);
   };
   const applyAssistantPlan = () => {
-    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true });
+    const plan = assistantPlan || buildWorkflowFromPrompt({ prompt, agents, existingFlow: [], idFactory: uuid, iotEnabled: true, providers });
     setAgents(plan.agents);
     const flow = decorateIoTSteps(plan.steps, settings);
     setMeta({ id: '', name: 'AI IoT pipeline', category: 'iot', task: prompt, workspaceRoot: './workspace', loops: 1, cron: '', steps: flow, loopGroups: plan.loopGroups });
@@ -139,7 +139,7 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
       </div>
       <textarea value={prompt} onChange={e => setPrompt(e.target.value)} />
       <div className="row"><button onClick={planWithAssistant}>Plan IoT workflow</button><button className="primary" onClick={applyAssistantPlan}>Open in Workflow builder</button><button onClick={saveIoTSettings}>Save IoT catalog</button><span className="muted">{status}</span></div>
-      {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b><span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
+      {assistantPlan && <div className="assistant-plan"><b>{assistantPlan.summary}</b>{assistantPlan.warning && <em>{assistantPlan.warning}</em>}<span>{assistantPlan.steps.map((step, index) => `${index + 1}. ${assistantPlan.agents.find(agent => agent.id === step.agentId)?.name || step.agentId}`).join(' → ')}</span></div>}
     </div>
 
     <div className="grid two">
@@ -198,7 +198,7 @@ export function IoTPipelinesPage({ agents, settings, setSettings, setAgents, set
         {iotAgents.map(agent => <div className="iot-pipeline-card" key={agent.id}>
           <b>{agent.name}</b>
           <span>{agent.role}</span>
-          <small>{agent.provider || 'openai'} · {agent.model || 'default model'} · {(agent.skills || []).join(', ')}</small>
+          <small>{agent.provider || 'auto'} · {agent.model || 'provider default'} · {(agent.skills || []).join(', ')}</small>
           <button onClick={() => openWithAgent(agent)}>Open with this agent</button>
         </div>)}
       </div>

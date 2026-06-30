@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 const API = 'http://localhost:8787/api';
 const uuid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-const emptySettings = { id: 'runtime-settings', agentExecution: { fileWriteMode: 'direct', maxFileBlocks: 20 }, llmProviders: [], iotSources: [], iotActions: [] };
+const emptySettings = { id: 'runtime-settings', agentExecution: { fileWriteMode: 'direct', maxFileBlocks: 20, allowMockProvider: false }, llmProviders: [], iotSources: [], iotActions: [] };
 
 export function SettingsPage({ settings, setSettings, setProviders }) {
   const [draft, setDraft] = useState(settings || emptySettings);
@@ -22,6 +22,12 @@ export function SettingsPage({ settings, setSettings, setProviders }) {
     ...current,
     llmProviders: (current.llmProviders || []).map(provider => provider.id === id ? { ...provider, ...patch } : provider)
   }));
+  const providerStatus = (provider) => {
+    if (provider.enabled === false) return { label: 'Disabled', tone: 'muted' };
+    if (provider.configured) return { label: 'Ready for workflows', tone: 'ready' };
+    if ((provider.providerKind || provider.id) === 'mock') return { label: 'Test-only disabled', tone: 'warn' };
+    return { label: 'Needs settings', tone: 'warn' };
+  };
   const addProvider = () => setDraft(current => ({
     ...current,
     llmProviders: [
@@ -44,7 +50,7 @@ export function SettingsPage({ settings, setSettings, setProviders }) {
   };
 
   return <section>
-    <Header title="Settings" subtitle="Configure system fallback behavior and workflow-agent LLM providers. IoT devices live in IoT Pipelines." />
+    <Header title="Settings" subtitle="Configure workflow-agent LLM providers stored locally in SQLite. Env credentials are reserved for system AI assistants. IoT devices live in IoT Pipelines." />
     <div className="settings-grid">
       <div className="panel">
         <h3>Agent execution</h3>
@@ -60,14 +66,17 @@ export function SettingsPage({ settings, setSettings, setProviders }) {
             <input type="number" min="1" max="100" value={execution.maxFileBlocks || 20} onChange={e => updateExecution({ maxFileBlocks: e.target.value })} />
           </label>
         </div>
+        <label className="check-row"><input type="checkbox" checked={!!execution.allowMockProvider} onChange={e => updateExecution({ allowMockProvider: e.target.checked })} /> Allow Mock provider for local tests only</label>
       </div>
       <div className="panel">
         <h3>Agent LLM providers</h3>
-        <p className="muted">Per-agent provider/model choices use these runtime settings. Keys are stored locally in SQLite; env remains a system fallback.</p>
+        <p className="muted">Per-agent provider/model choices use only these runtime settings. Add API keys or local base URLs here; `.env` keys are not used by workflow agents.</p>
         <button onClick={addProvider}>+ Add provider</button>
         <div className="settings-list">
-          {providers.map(provider => <div className="settings-card" key={provider.id}>
-            <div className="settings-card-head"><b>{provider.name || provider.id}</b><label><input type="checkbox" checked={provider.enabled !== false} onChange={e => updateProvider(provider.id, { enabled: e.target.checked })} /> enabled</label></div>
+          {providers.map(provider => {
+            const status = providerStatus(provider);
+            return <div className="settings-card" key={provider.id}>
+            <div className="settings-card-head"><div><b>{provider.name || provider.id}</b><span className={`provider-badge ${status.tone}`}>{status.label}</span></div><label><input type="checkbox" checked={provider.enabled !== false} onChange={e => updateProvider(provider.id, { enabled: e.target.checked })} /> enabled</label></div>
             <div className="drawer-grid">
               <label>Provider ID
                 <input value={provider.id || ''} onChange={e => updateProvider(provider.id, { id: e.target.value })} placeholder="openai / ollama / custom-id" />
@@ -94,9 +103,11 @@ export function SettingsPage({ settings, setSettings, setProviders }) {
               </label>
             </div>
             <label>API key
-              <input type="password" value={provider.apiKey || ''} onChange={e => updateProvider(provider.id, { apiKey: e.target.value })} placeholder="Leave empty for env fallback; masked keys are preserved" />
+              <input type="password" value={provider.apiKey || ''} onChange={e => updateProvider(provider.id, { apiKey: e.target.value })} placeholder="Stored locally for workflow agents; masked keys are preserved" />
             </label>
-          </div>)}
+            {provider.status && <small className="muted">{provider.status}</small>}
+          </div>;
+          })}
         </div>
       </div>
     </div>

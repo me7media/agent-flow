@@ -32,6 +32,7 @@ class RuntimeSettingsTests(unittest.TestCase):
 
         self.assertEqual(execution["fileWriteMode"], "review")
         self.assertEqual(execution["maxFileBlocks"], 20)
+        self.assertFalse(execution["allowMockProvider"])
 
 
 class IoTDomainTests(unittest.TestCase):

@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import re
 import time
+from pathlib import PurePosixPath
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .iot import IoTContextBuilder
-from .llm import call_llm
+from .llm import ProviderConfigurationError, call_llm
 from .settings_service import agent_execution_config
 from .workspace import git_info, read_text_file, scan_folder, write_text_file
 
@@ -50,6 +51,42 @@ def _can_write_artifact(agent: dict[str, Any]) -> bool:
     return _has_any(
         agent,
         ["developer", "coder", "file_manager", "file_write", "docs", "git_patch", "code_generation", "patch_writer", "qa", "security", "summary", "code_review", "folder_scan"],
+    )
+
+
+def _can_write_source_files(agent: dict[str, Any]) -> bool:
+    return _has_any(agent, ["developer", "coder", "file_manager", "file_write", "git_patch", "code_generation", "patch_writer"])
+
+
+def _can_write_test_files(agent: dict[str, Any]) -> bool:
+    return _can_write_source_files(agent) or _has_any(agent, ["qa", "tester", "test_runner", "test_runner_plan"])
+
+
+def _can_write_doc_files(agent: dict[str, Any]) -> bool:
+    return _can_write_source_files(agent) or _has_any(agent, ["docs", "writer", "release_notes"])
+
+
+def _is_test_path(path: str) -> bool:
+    value = path.lower()
+    name = PurePosixPath(value).name
+    return value.startswith("tests/") or "/tests/" in value or name.startswith("test_") or name.endswith(("_test.py", ".test.js", ".test.mjs", ".spec.js", ".spec.ts"))
+
+
+def _is_doc_path(path: str) -> bool:
+    value = path.lower()
+    return value == "readme.md" or value.startswith("docs/") or value.endswith((".md", ".mdx", ".rst"))
+
+
+def _file_block_write_reason(agent: dict[str, Any], path: str) -> str | None:
+    if _can_write_source_files(agent):
+        return None
+    if _is_test_path(path) and _can_write_test_files(agent):
+        return None
+    if _is_doc_path(path) and _can_write_doc_files(agent):
+        return None
+    return (
+        "agent is not allowed to write this file type; source/config writes require developer/file_write skills, "
+        "QA may write tests, and docs agents may write Markdown/docs"
     )
 
 
@@ -126,6 +163,10 @@ async def _write_generated_file_blocks(
     direct_writes = _should_write_directly(runtime_settings)
     written: list[str] = []
     for block in blocks[: _max_file_blocks(runtime_settings)]:
+        reason = _file_block_write_reason(agent, block["path"])
+        if reason:
+            await _emit(on_event, {"type": "warning", "agentName": agent.get("name"), "message": f"Skipped file block {block['path']}: {reason}"})
+            continue
         target_path = block["path"] if direct_writes else f"agent-flow-output/generated/{_safe_name(agent.get('name'))}/{block['path']}"
         try:
             path = write_text_file(workspace_root, target_path, block["content"])
@@ -253,19 +294,43 @@ async def _run_single_step(
         f"- {write_mode}\n"
         "- To create files, use this exact format and relative paths only:\n\n"
         '```file path="src/example.js"\ncontent here\n```\n\n'
+        "- File block permissions are role-aware: developer/file-write agents may write source/config, QA may write tests, and docs agents may write Markdown/docs.\n"
         "- Do not wrap implementation-only changes only in Markdown. Use file blocks for code, tests, config and folders that should exist.\n"
         "- Keep dependencies minimal and explain commands.\n"
     )
 
     started_at = _iso_now()
     await _emit(on_event, {"type": "llm_start", "agentName": agent_name, "message": "Calling model/provider..."})
-    output = await call_llm(
-        provider=agent.get("provider"),
-        model=agent.get("model"),
-        temperature=agent.get("temperature"),
-        prompt=prompt,
-        runtime_settings=runtime_settings,
-    )
+    try:
+        output = await call_llm(
+            provider=agent.get("provider"),
+            model=agent.get("model"),
+            temperature=agent.get("temperature"),
+            prompt=prompt,
+            runtime_settings=runtime_settings,
+            usage="workflow",
+        )
+    except ProviderConfigurationError as exc:
+        output = str(exc)
+        log = {
+            "step": index + 1,
+            "loop": global_loop,
+            "groupLoop": group_loop,
+            "stepLoop": local_loop,
+            "agentId": agent.get("id"),
+            "agentName": agent_name,
+            "startedAt": started_at,
+            "finishedAt": _iso_now(),
+            "artifactPath": None,
+            "generatedFiles": [],
+            "iotSourceIds": step.get("iotSourceIds") or agent.get("iotSourceIds") or [],
+            "iotActionIds": step.get("iotActionIds") or agent.get("iotActionIds") or [],
+            "output": output,
+            "error": "provider_not_configured",
+        }
+        await _emit(on_event, {"type": "error", "agentName": agent_name, "error": output, "message": output})
+        await _emit(on_event, {"type": "step_done", "log": log, "message": f"{agent_name} failed: provider is not configured."})
+        return log
     artifact_path = await _write_agent_artifact(agent, workspace_root, output, index, global_loop, group_loop, local_loop, project_context, on_event)
     generated_files = await _write_generated_file_blocks(agent, workspace_root, output, runtime_settings, on_event)
     log = {
@@ -285,6 +350,35 @@ async def _run_single_step(
     }
     await _emit(on_event, {"type": "step_done", "log": log, "message": f"{agent_name} finished."})
     return log
+
+
+async def _missing_agent_log(
+    step: dict[str, Any],
+    index: int,
+    global_loop: int,
+    group_loop: int | None,
+    local_loop: int,
+    on_event: EventHandler | None,
+) -> dict[str, Any]:
+    missing_id = step.get("agentId")
+    message = f"Step {index + 1} skipped: agent not found: {missing_id}"
+    await _emit(on_event, {"type": "warning", "step": index + 1, "agentId": missing_id, "message": message})
+    return {
+        "step": index + 1,
+        "loop": global_loop,
+        "groupLoop": group_loop,
+        "stepLoop": local_loop,
+        "agentId": missing_id,
+        "agentName": "Missing agent",
+        "startedAt": _iso_now(),
+        "finishedAt": _iso_now(),
+        "artifactPath": None,
+        "generatedFiles": [],
+        "iotSourceIds": step.get("iotSourceIds") or [],
+        "iotActionIds": step.get("iotActionIds") or [],
+        "output": message,
+        "error": "agent_not_found",
+    }
 
 
 async def run_flow(
@@ -319,6 +413,9 @@ async def run_flow(
                         step = flow[group_index]
                         agent = next((item for item in agents if item.get("id") == step.get("agentId")), None)
                         if not agent:
+                            log = await _missing_agent_log(step, group_index, global_loop, group_loop, 1, on_event)
+                            previous_output = log["output"]
+                            logs.append({**log, "loopGroupId": group.get("id"), "loopGroupName": group.get("name") or f"Steps {group['start'] + 1}-{group['end'] + 1}"})
                             continue
                         for local_loop in range(1, _clamp_int(step.get("loops", 1), 1, 10, 1) + 1):
                             log = await _run_single_step(
@@ -345,6 +442,9 @@ async def run_flow(
             step = flow[index]
             agent = next((item for item in agents if item.get("id") == step.get("agentId")), None)
             if not agent:
+                log = await _missing_agent_log(step, index, global_loop, None, 1, on_event)
+                previous_output = log["output"]
+                logs.append(log)
                 index += 1
                 continue
             for local_loop in range(1, _clamp_int(step.get("loops", 1), 1, 10, 1) + 1):

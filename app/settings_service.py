@@ -17,6 +17,7 @@ def default_runtime_settings() -> dict[str, Any]:
         "agentExecution": {
             "fileWriteMode": "review",
             "maxFileBlocks": 20,
+            "allowMockProvider": False,
         },
         "llmProviders": [
             {"id": "mock", "name": "Mock", "providerKind": "mock", "enabled": True, "defaultModel": "mock-model", "apiKey": "", "baseUrl": ""},
