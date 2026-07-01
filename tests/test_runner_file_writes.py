@@ -185,6 +185,43 @@ def test_ok():
             self.assertFalse((Path(workspace) / "app/generated_feature.py").exists())
             self.assertTrue(any(event.get("type") == "error" and "workflow agents" in event.get("message", "") for event in events))
 
+    async def test_iot_tool_step_executes_action_without_llm_provider(self):
+        from app import runner
+
+        original_execute = runner.execute_iot_action
+        calls = []
+
+        async def fake_execute(action_id, command, settings, approved=False, dry_run=None):
+            calls.append({"action_id": action_id, "command": command, "approved": approved, "dry_run": dry_run})
+            return {"ok": True, "dryRun": dry_run, "actionId": action_id, "command": command}
+
+        runner.execute_iot_action = fake_execute
+        try:
+            logs = await run_flow(
+                flow=[
+                    {
+                        "id": "step-1",
+                        "agentId": "iot-device-manager",
+                        "iotActionIds": ["tuya-plug"],
+                        "iotCommand": "turn_on",
+                        "iotApproved": True,
+                        "iotDryRun": False,
+                        "iotToolOnly": True,
+                    }
+                ],
+                agents=[{"id": "iot-device-manager", "name": "IoT Device Manager", "role": "Control", "skills": ["device_control"], "mcps": []}],
+                skills=[],
+                mcps=[],
+                task="Turn on outlet",
+                runtime_settings={},
+            )
+
+            self.assertEqual(calls, [{"action_id": "tuya-plug", "command": "turn_on", "approved": True, "dry_run": False}])
+            self.assertTrue(logs[0]["iotResults"][0]["ok"])
+            self.assertNotIn("provider_not_configured", logs[0].get("error") or "")
+        finally:
+            runner.execute_iot_action = original_execute
+
 
 if __name__ == "__main__":
     unittest.main()

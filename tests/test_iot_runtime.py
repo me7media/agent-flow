@@ -49,6 +49,108 @@ class IoTRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["dryRun"])
 
+    async def test_tasmota_action_builds_get_request_plan(self):
+        main.config.IOT_DEVICE_ACTIONS_ENABLED = False
+        settings = default_runtime_settings()
+        settings["iotActions"].append(
+            {
+                "id": "office-plug",
+                "name": "Office plug",
+                "kind": "smart_plug",
+                "transport": "wifi/http",
+                "endpoint": "http://192.168.0.55",
+                "adapter": "tasmota",
+                "commands": ["turn_on", "turn_off"],
+                "requiresApproval": True,
+                "enabled": True,
+            }
+        )
+
+        result = await execute_iot_action("office-plug", "turn_on", settings, approved=True)
+
+        self.assertTrue(result["dryRun"])
+        self.assertEqual(result["request"]["method"], "GET")
+        self.assertEqual(result["request"]["url"], "http://192.168.0.55/cm?cmnd=Power+On")
+
+    async def test_custom_command_map_builds_request_plan(self):
+        main.config.IOT_DEVICE_ACTIONS_ENABLED = False
+        settings = default_runtime_settings()
+        settings["iotActions"].append(
+            {
+                "id": "lab-plug",
+                "name": "Lab plug",
+                "kind": "smart_plug",
+                "transport": "wifi/http",
+                "endpoint": "http://192.168.0.60/api/device",
+                "commands": ["turn_on", "turn_off"],
+                "commandMap": {
+                    "turn_on": {"method": "PUT", "path": "/api/device/state", "json": {"state": "on", "device": "{{actionId}}"}},
+                    "turn_off": {"method": "PUT", "path": "/api/device/state", "json": {"state": "off", "device": "{{actionId}}"}},
+                },
+                "requiresApproval": True,
+                "enabled": True,
+            }
+        )
+
+        result = await execute_iot_action("lab-plug", "turn_off", settings, approved=True)
+
+        self.assertEqual(result["request"]["method"], "PUT")
+        self.assertEqual(result["request"]["url"], "http://192.168.0.60/api/device/state")
+        self.assertEqual(result["request"]["json"], {"state": "off", "device": "lab-plug"})
+
+    async def test_tuya_local_requires_local_key(self):
+        main.config.IOT_DEVICE_ACTIONS_ENABLED = True
+        main.config.IOT_ALLOWED_HOSTS = ["192.168.0.100"]
+        settings = default_runtime_settings()
+        settings["iotActions"].append(
+            {
+                "id": "tuya-plug",
+                "name": "Tuya plug",
+                "kind": "smart_plug",
+                "transport": "tuya-local",
+                "endpoint": "192.168.0.100",
+                "adapter": "tuya-local",
+                "deviceId": "bf60bd5c14400e69b1nplq",
+                "version": "3.3",
+                "commands": ["turn_on", "turn_off"],
+                "requiresApproval": True,
+                "enabled": True,
+            }
+        )
+
+        result = await execute_iot_action("tuya-plug", "turn_on", settings, approved=True, dry_run=False)
+
+        self.assertFalse(result["ok"])
+        self.assertIn("localKey", result["message"])
+
+    async def test_tuya_discovery_maps_scan_to_suggested_action(self):
+        from app import iot_runtime
+
+        original_import = iot_runtime.__import__ if hasattr(iot_runtime, "__import__") else None
+        original_to_thread = iot_runtime.asyncio.to_thread
+
+        async def fake_to_thread(func, *args, **kwargs):
+            return {
+                "192.168.0.100": {
+                    "ip": "192.168.0.100",
+                    "gwId": "bf60bd5c14400e69b1nplq",
+                    "encrypt": True,
+                    "productKey": "product",
+                    "version": "3.3",
+                    "name": "Outlet",
+                }
+            }
+
+        iot_runtime.asyncio.to_thread = fake_to_thread
+        try:
+            result = await discover_iot_devices({"transport": "tuya-local"})
+        finally:
+            iot_runtime.asyncio.to_thread = original_to_thread
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["devices"][0]["suggestedAction"]["adapter"], "tuya-local")
+        self.assertEqual(result["devices"][0]["suggestedAction"]["deviceId"], "bf60bd5c14400e69b1nplq")
+
     async def test_non_http_discovery_returns_gateway_guidance(self):
         result = await discover_iot_devices({"transport": "mqtt"})
 

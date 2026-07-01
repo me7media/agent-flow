@@ -3,11 +3,13 @@ from __future__ import annotations
 import os
 import re
 import time
+import json
 from pathlib import PurePosixPath
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .iot import IoTContextBuilder
+from .iot_runtime import execute_iot_action
 from .llm import ProviderConfigurationError, call_llm
 from .settings_service import agent_execution_config
 from .workspace import git_info, read_text_file, scan_folder, write_text_file
@@ -17,6 +19,10 @@ EventHandler = Callable[[dict[str, Any]], Any]
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def json_dumps_safe(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
 def _agent_context(agent: dict[str, Any], skills: list[dict[str, Any]], mcps: list[dict[str, Any]]) -> dict[str, Any]:
@@ -150,6 +156,41 @@ def _max_file_blocks(runtime_settings: dict[str, Any] | None) -> int:
     return _clamp_int(execution.get("maxFileBlocks", 20), 1, 100, 20)
 
 
+async def _execute_step_iot_actions(
+    step: dict[str, Any],
+    agent: dict[str, Any],
+    runtime_settings: dict[str, Any] | None,
+    on_event: EventHandler | None,
+) -> list[dict[str, Any]]:
+    command = str(step.get("iotCommand") or "").strip()
+    action_ids = step.get("iotActionIds") or agent.get("iotActionIds") or []
+    if not command or not action_ids:
+        return []
+    results = []
+    for action_id in action_ids:
+        await _emit(on_event, {"type": "tool", "agentName": agent.get("name"), "tool": "iot_action", "message": f"Executing IoT action {action_id}:{command}"})
+        result = await execute_iot_action(
+            str(action_id),
+            command,
+            runtime_settings,
+            approved=bool(step.get("iotApproved")),
+            dry_run=step.get("iotDryRun") if isinstance(step.get("iotDryRun"), bool) else None,
+        )
+        results.append(result)
+        await _emit(
+            on_event,
+            {
+                "type": "iot_action",
+                "agentName": agent.get("name"),
+                "actionId": action_id,
+                "command": command,
+                "result": result,
+                "message": result.get("message") or f"IoT action {action_id}:{command} finished.",
+            },
+        )
+    return results
+
+
 async def _write_generated_file_blocks(
     agent: dict[str, Any],
     workspace_root: str,
@@ -276,6 +317,30 @@ async def _run_single_step(
             f"Status:\n{git.get('status') or 'clean'}\nDiff stat:\n{git.get('diff') or '-'}"
         )
 
+    if step.get("iotCommand") and step.get("iotToolOnly", True):
+        started_at = _iso_now()
+        results = await _execute_step_iot_actions(step, agent, runtime_settings, on_event)
+        output = json_dumps_safe({"iotCommand": step.get("iotCommand"), "iotResults": results})
+        log = {
+            "step": index + 1,
+            "loop": global_loop,
+            "groupLoop": group_loop,
+            "stepLoop": local_loop,
+            "agentId": agent.get("id"),
+            "agentName": agent_name,
+            "startedAt": started_at,
+            "finishedAt": _iso_now(),
+            "artifactPath": None,
+            "generatedFiles": [],
+            "iotSourceIds": step.get("iotSourceIds") or agent.get("iotSourceIds") or [],
+            "iotActionIds": step.get("iotActionIds") or agent.get("iotActionIds") or [],
+            "iotResults": results,
+            "output": output,
+            "error": next((item.get("message") or "iot_action_failed" for item in results if not item.get("ok")), None),
+        }
+        await _emit(on_event, {"type": "step_done", "log": log, "message": f"{agent_name} finished IoT command."})
+        return log
+
     incoming_output = "" if step.get("dependsOnPrevious") is False else previous_output
     direct_writes = _should_write_directly(runtime_settings)
     write_mode = (
@@ -283,7 +348,42 @@ async def _run_single_step(
         if direct_writes
         else "DIRECT WRITE MODE IS SET TO REVIEW/STAGING. Still output complete file blocks with the intended real project-relative paths. The backend will stage them under agent-flow-output/generated/<agent>/ for human review instead of overwriting source files."
     )
+    
+    # Fetch live IoT source payloads during flow execution
+    source_ids = step.get("iotSourceIds") or agent.get("iotSourceIds") or []
+    live_source_data = []
+    image_path = None
+    
+    if source_ids:
+        from .iot_runtime import read_iot_source
+        for source_id in source_ids:
+            try:
+                await _emit(on_event, {"type": "tool", "agentName": agent_name, "tool": "iot_read", "message": f"Reading IoT source {source_id}..."})
+                reading = await read_iot_source(str(source_id), runtime_settings)
+                if reading.get("ok"):
+                    payload = reading.get("payload")
+                    live_source_data.append(
+                        f"Live reading for source '{source_id}':\n"
+                        f"Status: {reading.get('status')}\n"
+                        f"Data: {json.dumps(payload, ensure_ascii=False)}"
+                    )
+                    # If this is a video camera feed and has captured an image
+                    if reading.get("dataType") == "video" and reading.get("imagePath"):
+                        img_relative = reading.get("imagePath")
+                        resolved_img_path = os.path.join(workspace_root, img_relative)
+                        if os.path.exists(resolved_img_path):
+                            image_path = resolved_img_path
+                else:
+                    live_source_data.append(
+                        f"Live reading for source '{source_id}' failed: {reading.get('message')}"
+                    )
+            except Exception as e:
+                live_source_data.append(f"Could not read source '{source_id}': {e}")
+
     iot_context_block = f"\n\n{iot_context}" if iot_context else ""
+    if live_source_data:
+        iot_context_block += "\n\nLIVE SOURCE READINGS:\n" + "\n---\n".join(live_source_data)
+
     prompt = (
         f"{agent.get('systemPrompt') or ''}\n\nAGENT ROLE:\n{agent.get('role')}\n\nAGENT SKILLS:\n{ctx['skillsText']}\n\n"
         f"CONNECTED MCP:\n{ctx['mcpsText']}\n\nUSER TASK:\n{task}\n\nSTEP COMMENT / EXTRA PROMPT:\n{step.get('note') or '-'}\n\n"
@@ -309,6 +409,7 @@ async def _run_single_step(
             prompt=prompt,
             runtime_settings=runtime_settings,
             usage="workflow",
+            image_path=image_path,
         )
     except ProviderConfigurationError as exc:
         output = str(exc)

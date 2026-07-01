@@ -351,7 +351,7 @@ When disabled:
 2. Add trusted devices/gateways:
 
    ```env
-   IOT_ALLOWED_HOSTS=192.168.1.10,192.168.1.20,homeassistant.local
+   IOT_ALLOWED_HOSTS=DEVICE_LAN_IP,HOME_AUTOMATION_HOST
    ```
 
 3. Restart the app:
@@ -374,6 +374,92 @@ When disabled:
     ```
 
 12. Restart and use `Execute approved` only for trusted actions.
+
+### Example: Wi‑Fi Smart Plug On → 10s → Off
+
+Use this for a real outlet only after you know its local network address and protocol. Replace every uppercase value with your own device data.
+
+1. Find likely devices:
+
+   ```bash
+   arp -a
+   curl -s http://localhost:8787/api/iot/discover \
+     -H 'Content-Type: application/json' \
+     -d '{"transport":"wifi/http","hosts":["DEVICE_LAN_IP"],"ports":["80","8080","8123","9999"]}' \
+     | python3 -m json.tool
+   ```
+
+2. Allowlist only the device/gateway IP:
+
+   ```env
+   IOT_DEVICE_ACTIONS_ENABLED=true
+   IOT_ALLOWED_HOSTS=DEVICE_LAN_IP
+   ```
+
+3. Register an action in `IoT Pipelines`.
+
+   Tasmota:
+
+   ```json
+   {
+     "id": "smart-plug-action",
+     "name": "Smart plug",
+     "kind": "smart_plug",
+     "transport": "wifi/http",
+     "endpoint": "http://DEVICE_LAN_IP",
+     "adapter": "tasmota",
+     "commands": ["turn_on", "turn_off"],
+     "requiresApproval": true,
+     "enabled": true
+   }
+   ```
+
+   Shelly relay:
+
+   ```json
+   {
+     "endpoint": "http://DEVICE_LAN_IP",
+     "adapter": "shelly",
+     "commands": ["turn_on", "turn_off"]
+   }
+   ```
+
+   Custom HTTP gateway:
+
+   ```json
+   {
+     "adapter": "custom",
+     "commandMap": {
+       "turn_on": {"method": "PUT", "path": "/api/device/state", "json": {"state": "on", "device": "{{actionId}}"}},
+       "turn_off": {"method": "PUT", "path": "/api/device/state", "json": {"state": "off", "device": "{{actionId}}"}}
+     }
+   }
+   ```
+
+4. Dry-run first:
+
+   ```bash
+   curl -s -X POST http://localhost:8787/api/iot/actions/test \
+     -H 'Content-Type: application/json' \
+     -d '{"actionId":"smart-plug-action","command":"turn_on"}' \
+     | python3 -m json.tool
+   ```
+
+5. Execute approved on/off:
+
+   ```bash
+   curl -s -X POST http://localhost:8787/api/iot/actions/execute \
+     -H 'Content-Type: application/json' \
+     -d '{"actionId":"smart-plug-action","command":"turn_on","approved":true,"dryRun":false}' \
+     | python3 -m json.tool
+
+   sleep 10
+
+   curl -s -X POST http://localhost:8787/api/iot/actions/execute \
+     -H 'Content-Type: application/json' \
+     -d '{"actionId":"smart-plug-action","command":"turn_off","approved":true,"dryRun":false}' \
+     | python3 -m json.tool
+   ```
 
 ### Example: Camera Gesture → Gate Command
 

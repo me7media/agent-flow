@@ -10,6 +10,26 @@ const asJson = async (response) => {
 };
 const post = (url, body) => fetch(`${API}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(asJson);
 
+const sourcePresets = [
+  { name: 'Camera0 (Tuya FaceTime)', kind: 'camera', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/camera/PTZB648647BMZSB', dataType: 'video', description: 'Surveillance camera Camera0 (Tuya ID: PTZB648647BMZSB) via local HTTP gateway/FaceTime HD camera.' },
+  { name: 'Doorbell Camera', kind: 'camera', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/camera/PTZB648647BMZSB', dataType: 'video', description: 'Smart video doorbell camera stream at the front door.' },
+  { name: 'RTSP IP Camera', kind: 'camera', transport: 'wifi/rtsp', endpoint: 'rtsp://192.168.0.101/live/ch0', dataType: 'video', description: 'Generic RTSP/ONVIF security camera stream.' },
+  { name: 'Porch Microphone', kind: 'microphone', transport: 'usb/audio', endpoint: 'local://audio/porch', dataType: 'audio', description: 'Audio input source for voice or sound-event workflows.' },
+  { name: 'Living Room Thermostat', kind: 'sensor', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/thermo/telemetry', dataType: 'json', description: 'Wi-Fi sensor reporting temperature, humidity and air quality index.' },
+  { name: 'Garden Motion Sensor', kind: 'sensor', transport: 'mqtt/wifi', endpoint: 'mqtt://iot.local/sensors/garden-motion', dataType: 'boolean', description: 'Motion sensor event stream used by demo IoT pipelines.' },
+  { name: 'Custom ESP32 Telemetry', kind: 'sensor', transport: 'custom/esp32', endpoint: 'http://192.168.0.150/telemetry', dataType: 'json', description: 'Custom embedded microcontroller telemetry feed (temperature/vibration/distance).' }
+];
+
+const actionPresets = [
+  { name: 'Driveway Gate Controller', kind: 'gate', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/gate/control', commands: ['open', 'close', 'stop'], adapter: 'generic-json', requiresApproval: true, description: 'Driveway gate actuator used by gesture workflows.' },
+  { name: 'Garage Door Opener', kind: 'gate', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/gate/control?device=garage', commands: ['open', 'close'], adapter: 'generic-json', requiresApproval: true, description: 'Smart garage relay board.' },
+  { name: 'Living Room AC', kind: 'appliance', transport: 'wifi/http', endpoint: 'http://127.0.0.1:8787/api/iot/gate/control?device=ac', commands: ['turn_on', 'turn_off', 'set_temp_22', 'set_temp_24'], adapter: 'generic-json', requiresApproval: false, description: 'Smart air conditioner IR blaster or Wi-Fi control.' },
+  { name: 'Window Blinds Motor', kind: 'motor', transport: 'zigbee/mqtt', endpoint: 'mqtt://iot.local/blinds/control', commands: ['open', 'close', 'stop'], adapter: 'custom', requiresApproval: false, description: 'Zigbee motorized roller shade controller.' },
+  { name: 'Smart Door Lock', kind: 'lock', transport: 'ble/lock', endpoint: 'local://lock/front-door', commands: ['lock', 'unlock'], adapter: 'custom', requiresApproval: true, description: 'Smart Bluetooth deadbolt actuator.' },
+  { name: 'Tuya Smart Plug', kind: 'relay', transport: 'tuya-local', endpoint: '192.168.0.100', commands: ['turn_on', 'turn_off'], adapter: 'tuya-local', deviceId: 'bf60bd5c14400e69b1nplq', localKey: '', version: '3.3', dps: 1, requiresApproval: true, description: 'Tuya smart plug local relay control.' },
+  { name: 'Custom ESP32 Relay Board', kind: 'switch', transport: 'custom/esp32', endpoint: 'http://192.168.0.150/relay', commands: ['high', 'low'], adapter: 'generic-json', requiresApproval: false, description: 'Custom Arduino/ESP32 relay switch controlling secondary GPIO pins.' }
+];
+
 export function IoTPipelinesPage({ agents, providers = [], settings, setSettings, setAgents, setFlow, setMeta, setPage }) {
   const [pipelines, setPipelines] = useState([]);
   const [catalog, setCatalog] = useState({ sources: [], actions: [] });
@@ -78,14 +98,19 @@ export function IoTPipelinesPage({ agents, providers = [], settings, setSettings
     ...current,
     sources: [...(current.sources || []), source || { id: `iot-source-${uuid()}`, name: 'New IoT source', kind: 'sensor', transport: 'wifi/http', endpoint: '', dataType: 'json', enabled: true, description: '' }]
   }));
-  const addAction = () => setDraftCatalog(current => ({
+  const addAction = (action = null) => setDraftCatalog(current => ({
     ...current,
-    actions: [...(current.actions || []), { id: `iot-action-${uuid()}`, name: 'New IoT action', kind: 'relay', transport: 'wifi/http', endpoint: '', commands: ['turn_on', 'turn_off'], requiresApproval: true, enabled: true, description: '' }]
+    actions: [...(current.actions || []), action || { id: `iot-action-${uuid()}`, name: 'New IoT action', kind: 'relay', transport: 'wifi/http', endpoint: '', adapter: 'generic-json', commands: ['turn_on', 'turn_off'], commandMap: {}, requiresApproval: true, enabled: true, description: '' }]
+  }));
+  const addDiscoveredAction = (action) => setDraftCatalog(current => ({
+    ...current,
+    actions: [...(current.actions || []), action]
   }));
   const saveIoTSettings = async () => {
     try {
       setStatus('Saving IoT catalog...');
-      const payload = { ...(settings || { id: 'runtime-settings' }), iotSources: draftCatalog.sources || [], iotActions: draftCatalog.actions || [] };
+      const cleanActions = (draftCatalog.actions || []).map(({ commandMapText, ...action }) => action);
+      const payload = { ...(settings || { id: 'runtime-settings' }), iotSources: draftCatalog.sources || [], iotActions: cleanActions };
       const response = await fetch(`${API}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await asJson(response);
       setSettings(data.settings);
@@ -143,7 +168,7 @@ export function IoTPipelinesPage({ agents, providers = [], settings, setSettings
     </div>
 
     <div className="grid two">
-      <DiscoveryPanel adapters={adapters} draft={discoveryDraft} setDraft={setDiscoveryDraft} result={discoveryResult} discover={discover} addSource={addSource} />
+      <DiscoveryPanel adapters={adapters} draft={discoveryDraft} setDraft={setDiscoveryDraft} result={discoveryResult} discover={discover} addSource={addSource} addAction={addDiscoveredAction} />
       <div className="panel">
         <h3>Runtime architecture</h3>
         <div className="iot-diagram compact">
@@ -181,12 +206,42 @@ export function IoTPipelinesPage({ agents, providers = [], settings, setSettings
     </div>
     <div className="grid two iot-admin-grid">
       <div className="panel">
-        <div className="settings-card-head"><h3>IoT sources</h3><button onClick={() => addSource()}>+ Add source</button></div>
+        <div className="settings-card-head">
+          <h3>IoT sources</h3>
+          <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+            <button onClick={() => addSource()}>+ Add source</button>
+            <select onChange={e => {
+              if (e.target.value) {
+                const preset = sourcePresets[parseInt(e.target.value)];
+                addSource({ id: `iot-source-${uuid()}`, ...preset, enabled: true });
+                e.target.value = '';
+              }
+            }} className="preset-select" style={{ padding: '6px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--panel-bg)', color: 'var(--text-color)', fontSize: '13px' }}>
+              <option value="">-- Add Preconfigured --</option>
+              {sourcePresets.map((preset, idx) => <option key={idx} value={idx}>{preset.name}</option>)}
+            </select>
+          </div>
+        </div>
         <p className="muted">Inputs: cameras, microphones, sensors, webhooks or telemetry over Wi‑Fi, Bluetooth, cable, HTTP, MQTT, RTSP and similar transports.</p>
         <div className="settings-list">{(draftCatalog.sources || []).map(source => <IoTSourceEditor key={source.id} source={source} update={patch => updateSource(source.id, patch)} read={() => readSource(source)} result={sourceResults[source.id]} />)}</div>
       </div>
       <div className="panel">
-        <div className="settings-card-head"><h3>IoT actions</h3><button onClick={addAction}>+ Add action</button></div>
+        <div className="settings-card-head">
+          <h3>IoT actions</h3>
+          <div className="row" style={{ gap: '8px', alignItems: 'center' }}>
+            <button onClick={() => addAction()}>+ Add action</button>
+            <select onChange={e => {
+              if (e.target.value) {
+                const preset = actionPresets[parseInt(e.target.value)];
+                addAction({ id: `iot-action-${uuid()}`, ...preset, enabled: true });
+                e.target.value = '';
+              }
+            }} className="preset-select" style={{ padding: '6px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--panel-bg)', color: 'var(--text-color)', fontSize: '13px' }}>
+              <option value="">-- Add Preconfigured --</option>
+              {actionPresets.map((preset, idx) => <option key={idx} value={idx}>{preset.name}</option>)}
+            </select>
+          </div>
+        </div>
         <p className="muted">Actions are device-like capabilities for agents: gate controllers, relays, appliances, locks or other actuators with allowed commands.</p>
         <div className="settings-list">{(draftCatalog.actions || []).map(action => <IoTActionEditor key={action.id} action={action} update={patch => updateAction(action.id, patch)} runAction={runAction} results={actionResults} />)}</div>
       </div>
@@ -206,13 +261,14 @@ export function IoTPipelinesPage({ agents, providers = [], settings, setSettings
   </section>;
 }
 
-function DiscoveryPanel({ adapters, draft, setDraft, result, discover, addSource }) {
+function DiscoveryPanel({ adapters, draft, setDraft, result, discover, addSource, addAction }) {
   return <div className="panel">
     <h3>Connectivity & discovery</h3>
     <p className="muted">Scan small host lists/subnets for Wi‑Fi HTTP gateways, inspect known Bluetooth devices, or manually register gateways.</p>
     <div className="drawer-grid"><label>Transport
       <select value={draft.transport} onChange={e => setDraft({ ...draft, transport: e.target.value })}>
         <option value="wifi/http">Wi‑Fi / HTTP</option>
+        <option value="tuya-local">Tuya local encrypted</option>
         <option value="bluetooth">Bluetooth inventory</option>
         <option value="mqtt">MQTT gateway</option>
         <option value="rtsp">RTSP camera gateway</option>
@@ -223,7 +279,7 @@ function DiscoveryPanel({ adapters, draft, setDraft, result, discover, addSource
     <div className="drawer-grid"><input value={draft.hosts} onChange={e => setDraft({ ...draft, hosts: e.target.value })} placeholder="Hosts: 192.168.1.10,192.168.1.11" /><input value={draft.subnet} onChange={e => setDraft({ ...draft, subnet: e.target.value })} placeholder="Optional CIDR: 192.168.1.0/28" /></div>
     <div className="row"><button className="primary" onClick={discover}>Discover / inspect</button><span className="muted">Keep scans small; max hosts are server-limited.</span></div>
     <div className="adapter-grid">{adapters.map(adapter => <div className="iot-mini" key={adapter.id}><b>{adapter.name}</b><span>{adapter.transports.join(', ')}</span><small>{adapter.notes}</small></div>)}</div>
-    {result && <div className="settings-list"><b>Discovery result</b><small>{result.notes || `${result.scannedHosts || 0} host(s), ${(result.devices || []).length} device(s)`}</small>{(result.devices || []).map(device => <div className="iot-mini" key={device.id || device.address || device.name}><b>{device.name || device.id}</b><span>{device.transport || result.transport} · {device.endpoint || device.address || 'no endpoint'}</span><small>{device.sample || device.status || ''}</small>{device.suggestedSource && <button onClick={() => addSource(device.suggestedSource)}>Add as source</button>}</div>)}</div>}
+    {result && <div className="settings-list"><b>Discovery result</b><small>{result.notes || `${result.scannedHosts || 0} host(s), ${(result.devices || []).length} device(s)`}</small>{(result.devices || []).map(device => <div className="iot-mini" key={device.id || device.address || device.name}><b>{device.name || device.id}</b><span>{device.transport || result.transport} · {device.endpoint || device.address || 'no endpoint'}</span><small>{device.sample || device.status || ''}</small><div className="row">{device.suggestedSource && <button onClick={() => addSource(device.suggestedSource)}>Add as source</button>}{device.suggestedAction && <button onClick={() => addAction(device.suggestedAction)}>Add as action</button>}</div></div>)}</div>}
   </div>;
 }
 
@@ -261,11 +317,39 @@ function IoTSourceEditor({ source, update, read, result }) {
 
 function IoTActionEditor({ action, update, runAction, results }) {
   const commands = action.commands || [];
+  const commandMapText = JSON.stringify(action.commandMap || {}, null, 2);
+  const updateCommandMap = (value) => {
+    try {
+      update({ commandMap: value.trim() ? JSON.parse(value) : {} });
+    } catch {
+      update({ commandMapText: value });
+    }
+  };
   return <div className="settings-card">
     <div className="settings-card-head"><b>{action.name}</b><label><input type="checkbox" checked={action.enabled !== false} onChange={e => update({ enabled: e.target.checked })} /> enabled</label></div>
     <div className="drawer-grid"><input value={action.name || ''} onChange={e => update({ name: e.target.value })} placeholder="Name" /><input value={action.kind || ''} onChange={e => update({ kind: e.target.value })} placeholder="gate / relay / appliance" /></div>
-    <div className="drawer-grid"><input value={action.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/http, mqtt, bluetooth" /><input value={commands.join(', ')} onChange={e => update({ commands: e.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="open, close, stop" /></div>
+    <div className="drawer-grid"><input value={action.transport || ''} onChange={e => update({ transport: e.target.value })} placeholder="wifi/http, mqtt, bluetooth" /><input value={commands.join(', ')} onChange={e => update({ commands: e.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="turn_on, turn_off" /></div>
+    <label>HTTP adapter preset
+      <select value={action.adapter || 'generic-json'} onChange={e => update({ adapter: e.target.value })}>
+        <option value="generic-json">Generic JSON POST</option>
+        <option value="tasmota">Tasmota HTTP</option>
+        <option value="shelly">Shelly relay HTTP</option>
+        <option value="tuya-local">Tuya local encrypted</option>
+        <option value="home-assistant-webhook">Home Assistant webhook</option>
+        <option value="custom">Custom command map</option>
+      </select>
+    </label>
     <input value={action.endpoint || ''} onChange={e => update({ endpoint: e.target.value })} placeholder="Endpoint" />
+    {(action.adapter === 'tuya-local' || action.transport === 'tuya-local') && <div className="drawer-grid">
+      <input value={action.deviceId || ''} onChange={e => update({ deviceId: e.target.value })} placeholder="Tuya deviceId" />
+      <input type="password" value={action.localKey || ''} onChange={e => update({ localKey: e.target.value })} placeholder="Tuya localKey" />
+      <input value={action.version || '3.3'} onChange={e => update({ version: e.target.value })} placeholder="Protocol version" />
+      <input value={action.dps || 1} onChange={e => update({ dps: e.target.value })} placeholder="Switch DPS, usually 1" />
+    </div>}
+    <label>Command map JSON
+      <textarea rows="7" value={action.commandMapText ?? commandMapText} onChange={e => updateCommandMap(e.target.value)} onBlur={() => update({ commandMapText: undefined })} placeholder={'{"turn_on":{"method":"GET","path":"/cm","query":{"cmnd":"Power On"}}}'} />
+    </label>
+    <small className="muted">Use templates like {"{{command}}"} and {"{{actionId}}"}. Tasmota/Shelly presets work without custom JSON.</small>
     <label className="check-row"><input type="checkbox" checked={action.requiresApproval !== false} onChange={e => update({ requiresApproval: e.target.checked })} /> Requires approval before real device action</label>
     <textarea value={action.description || ''} onChange={e => update({ description: e.target.value })} placeholder="Human description and safety notes" />
     <div className="command-grid">{commands.map(command => <div className="iot-mini" key={command}><b>{command}</b><div className="row"><button onClick={() => runAction(action, command)}>Dry run</button><button className="danger-btn" onClick={() => runAction(action, command, { execute: true, approved: true })}>Execute approved</button></div>{results[`${action.id}:${command}`] && <pre>{JSON.stringify(results[`${action.id}:${command}`], null, 2)}</pre>}</div>)}</div>

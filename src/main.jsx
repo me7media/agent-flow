@@ -383,6 +383,17 @@ function StepSettingsDrawer({ step, agent, agents, setAgents, skills, mcps, prov
       <b>IoT device actions</b>
       <div className="mini-checks">{iotActions.map(action => <label key={action.id}><input type="checkbox" checked={(step.iotActionIds || []).includes(action.id)} onChange={() => toggleStepList('iotActionIds', action.id)} /> {action.name}</label>)}</div>
     </div>}
+    {!!(step.iotActionIds || []).length && <div className="drawer-meta">
+      <b>IoT command tool</b>
+      <div className="drawer-grid">
+        <input value={step.iotCommand || ''} onChange={event => updateStep(step.id, { iotCommand: event.target.value })} placeholder="turn_on / turn_off" />
+        <label className="check-row"><input type="checkbox" checked={step.iotToolOnly !== false} onChange={event => updateStep(step.id, { iotToolOnly: event.target.checked })} /> Tool-only step</label>
+      </div>
+      <div className="mini-checks">
+        <label><input type="checkbox" checked={step.iotDryRun !== false} onChange={event => updateStep(step.id, { iotDryRun: event.target.checked })} /> Dry run</label>
+        <label><input type="checkbox" checked={!!step.iotApproved} onChange={event => updateStep(step.id, { iotApproved: event.target.checked })} /> Approved real action</label>
+      </div>
+    </div>}
     <label className="check-row"><input type="checkbox" checked={step.dependsOnPrevious !== false} onChange={event => updateStep(step.id, { dependsOnPrevious: event.target.checked })} /> Use previous output</label>
     <div className="drawer-meta"><b>Agent skills</b><span>{agentSkills.join(', ') || 'No skills'}</span></div>
     <div className="drawer-meta"><b>MCP connectors</b><span>{agentMcps.join(', ') || 'No MCP connectors'}</span></div>

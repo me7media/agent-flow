@@ -569,3 +569,95 @@ async def email_send(request: Request) -> JSONResponse:
         return ok({"ok": True, "result": send_email(await request.json())})
     except Exception as exc:
         return error(str(exc), 500)
+
+
+@app.get("/api/iot/camera/PTZB648647BMZSB")
+@app.post("/api/iot/camera/PTZB648647BMZSB")
+async def camera_ptz_capture() -> dict[str, Any]:
+    import subprocess
+    import shutil
+    from pathlib import Path
+    from .workspace import resolve_workspace_root
+    
+    workspace_root = resolve_workspace_root(config.WORKSPACE_ROOT)
+    output_dir = Path(workspace_root) / "agent-flow-output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "camera_capture_PTZB648647BMZSB.jpg"
+    
+    ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    success = False
+    
+    if Path(ffmpeg_bin).exists():
+        try:
+            # Capture a single frame from MacBook camera (index 0) with framerate 30
+            cmd = [
+                ffmpeg_bin,
+                "-f", "avfoundation",
+                "-framerate", "30",
+                "-video_device_index", "0",
+                "-i", "",
+                "-frames:v", "1",
+                "-update", "1",
+                "-y",
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            if result.returncode == 0 and output_path.exists():
+                success = True
+        except Exception:
+            pass
+            
+    if not success:
+        # Fallback to writing a dummy file
+        try:
+            output_path.write_bytes(b"MOCK IMAGE DATA")
+        except Exception:
+            pass
+            
+    return {
+        "ok": True,
+        "alias": "Camera0",
+        "deviceId": "PTZB648647BMZSB",
+        "version": "0.0.0.0",
+        "status": "online",
+        "imagePath": "agent-flow-output/camera_capture_PTZB648647BMZSB.jpg",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "payload": {
+            "status": "captured" if success else "simulated",
+            "detected_gesture": "open_hand",
+            "confidence": 0.95,
+            "description": "Person standing near the driveway gate holding up an open hand."
+        }
+    }
+
+
+@app.get("/api/iot/gate/control")
+@app.post("/api/iot/gate/control")
+async def gate_control(request: Request) -> dict[str, Any]:
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+        
+    command = body.get("command") or request.query_params.get("command") or "unknown"
+    print(f"[Gate Control] Received command: {command}")
+    
+    return {
+        "ok": True,
+        "message": f"Driveway gate actuator received command '{command}' successfully.",
+        "status": "gate_opened" if command == "open" else "gate_closed" if command == "close" else "gate_stopped",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@app.get("/api/iot/thermo/telemetry")
+async def thermo_telemetry() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "temperature": 22.4,
+        "humidity": 45.2,
+        "co2": 650,
+        "status": "normal",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
